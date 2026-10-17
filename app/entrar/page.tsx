@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { IconLogo } from '@/components/icons';
@@ -21,6 +21,12 @@ export default function EntrarPage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('confirmado')) {
+      setInfo('E-mail confirmado! Agora é só entrar com seu e-mail e senha.');
+    }
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -38,7 +44,7 @@ export default function EntrarPage() {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
-          options: { data: { name: name.trim() } },
+          options: { data: { name: name.trim() }, emailRedirectTo: `${window.location.origin}/auth/callback` },
         });
         if (error) throw error;
         if (data.session) {

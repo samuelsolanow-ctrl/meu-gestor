@@ -1,0 +1,41 @@
+type P = { size?: number };
+
+const base = (size: number) => ({
+  width: size,
+  height: size,
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 1.8,
+  strokeLinecap: 'round' as const,
+  strokeLinejoin: 'round' as const,
+  'aria-hidden': true,
+});
+
+export const IconLogo = ({ size = 20 }: P) => (
+  <svg {...base(size)} strokeWidth={2.2}><path d="M4 17l5-5 4 4 7-8" /><path d="M15 8h5v5" /></svg>
+);
+export const IconHome = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg>
+);
+export const IconBills = ({ size = 22 }: P) => (
+  <svg {...base(size)}><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+);
+export const IconChat = ({ size = 24 }: P) => (
+  <svg {...base(size)} strokeWidth={2}><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.7A8 8 0 1 1 21 12z" /></svg>
+);
+export const IconPlus = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M12 5v14M5 12h14" /></svg>
+);
+export const IconMore = ({ size = 22 }: P) => (
+  <svg {...base(size)}><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
+);
+export const IconBack = ({ size = 22 }: P) => (
+  <svg {...base(size)} strokeWidth={2}><path d="M15 18l-6-6 6-6" /></svg>
+);
+export const IconSend = ({ size = 20 }: P) => (
+  <svg {...base(size)} strokeWidth={2}><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+);
+export const IconCheck = ({ size = 16 }: P) => (
+  <svg {...base(size)} strokeWidth={3}><path d="M5 12l5 5 9-10" /></svg>
+);

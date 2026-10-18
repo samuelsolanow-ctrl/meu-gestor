@@ -1,6 +1,7 @@
 import { getContext } from '@/lib/context';
 import { brl } from '@/lib/format';
 import { createAccountAction, createGoalAction, signOutAction } from '../actions';
+import FaceIdToggle from '@/components/FaceIdToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -123,6 +124,8 @@ export default async function MaisPage() {
           </form>
         </details>
       </section>
+
+      <FaceIdToggle userName={ctx.name} />
 
       <section className="card stack" aria-label="Instalar no iPhone">
         <div className="card-head"><h2>Instalar no iPhone</h2></div>

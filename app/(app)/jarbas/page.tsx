@@ -5,8 +5,9 @@ import { IconBack } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
 
-export default async function JarbasPage() {
+export default async function JarbasPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const ctx = await getContext();
+  const { q } = await searchParams;
   const { data } = await ctx.supabase
     .from('chat_messages')
     .select('id, role, content, created_at')
@@ -24,7 +25,7 @@ export default async function JarbasPage() {
           <div className="tiny muted">Seu assessor · lança na Família, a menos que você diga que é pessoal</div>
         </div>
       </header>
-      <ChatClient initial={(data ?? []).reverse()} firstName={ctx.name.split(' ')[0]} />
+      <ChatClient initial={(data ?? []).reverse()} firstName={ctx.name.split(' ')[0]} initialQuery={q?.slice(0, 2000)} />
     </main>
   );
 }

@@ -266,3 +266,23 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
 .mic-live { animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, .5); } 50% { box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); } }
 @media (prefers-reduced-motion: reduce) { .mic-live { animation: none; } }
+
+/* Barra de comando do Jarbas (Início) */
+.jbar-wrap { display: flex; flex-direction: column; gap: 12px; }
+.jbar {
+  height: 62px; border-radius: 31px; padding: 0 7px 0 8px; display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, .08), 0 0 26px rgba(52, 211, 153, .22);
+}
+.jbar.live { box-shadow: 0 0 0 6px rgba(52, 211, 153, .16), 0 0 34px rgba(52, 211, 153, .4); }
+.jbar-avatar { width: 42px; height: 42px; border-radius: 21px; flex-shrink: 0; display: grid; place-items: center; background: var(--accent-line); color: var(--accent); font-family: var(--serif); font-size: 23px; }
+.jbar-input { flex: 1 1 auto; min-width: 0; height: 46px; border: none; background: transparent; color: var(--text); font-size: 16px; outline: none; }
+.jbar-input::placeholder { color: var(--muted); }
+.jbar-btn { width: 48px; height: 48px; border-radius: 24px; flex-shrink: 0; border: none; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.jbar.live .jbar-btn { animation: pulse 1.2s ease-in-out infinite; }
+.jbar-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -20px; padding: 0 20px; }
+.jbar-chips::-webkit-scrollbar { display: none; }
+.jbar-tip { display: flex; gap: 10px; align-items: flex-start; text-align: left; padding: 12px 14px; border-radius: 18px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: #d7e2dd; font-size: 14px; line-height: 1.45; cursor: pointer; }
+.jbar-tip strong { color: var(--text); }
+.jbar-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--accent); margin-top: 7px; flex-shrink: 0; }
+@media (prefers-reduced-motion: reduce) { .jbar.live .jbar-btn { animation: none; } }

@@ -1,10 +1,11 @@
 import Link from 'next/link';
+import JarbasBar from '@/components/JarbasBar';
 import { getContext, pickSpace } from '@/lib/context';
 import { monthSummary } from '@/lib/finance';
 import { fmtWhen } from '@/lib/agenda';
 import { brl, daysBetween, dueLabel, monthName, monthRange, shortDate, todaySP } from '@/lib/format';
 import {
-  IconArrowDown, IconArrowUp, IconBills, IconCalendar, IconChat, IconChevron, IconList, IconMinus, IconPlus, IconReceipt, IconTarget,
+  IconArrowDown, IconArrowUp, IconBills, IconCalendar, IconChat, IconList, IconMinus, IconPlus, IconReceipt, IconTarget,
 } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -64,6 +65,8 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         <Link href="/mais" className="avatar-btn" aria-label="Perfil e ajustes">{firstName.charAt(0)}</Link>
       </header>
 
+      <JarbasBar tip={tip} />
+
       <nav className="seg" aria-label="Espaço">
         <Link href="/?e=pessoal" className={key === 'pessoal' ? 'on' : ''} aria-current={key === 'pessoal' ? 'page' : undefined}>{firstName}</Link>
         <Link href="/" className={key === 'casal' ? 'on' : ''} aria-current={key === 'casal' ? 'page' : undefined}>Família</Link>
@@ -111,11 +114,6 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         <Link href="/mais#metas"><span className="quick-icon"><IconTarget /></span>Metas</Link>
       </nav>
 
-      <Link href="/jarbas" className="insight" aria-label={`Jarbas: ${tip} Abrir conversa`}>
-        <span className="avatar">J</span>
-        <span className="insight-text"><strong style={{ color: 'var(--text)' }}>Jarbas</strong> · {tip}</span>
-        <span className="insight-go"><IconChevron /></span>
-      </Link>
 
       <section className="card" aria-label="Agenda">
         <div className="section-head">

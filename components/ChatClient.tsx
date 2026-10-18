@@ -61,7 +61,7 @@ function unlockSpeech() {
   } catch {}
 }
 
-export default function ChatClient({ initial, firstName }: { initial: { id: string; role: 'user' | 'assistant'; content: string }[]; firstName: string }) {
+export default function ChatClient({ initial, firstName, initialQuery }: { initial: { id: string; role: 'user' | 'assistant'; content: string }[]; firstName: string; initialQuery?: string }) {
   const router = useRouter();
   const [msgs, setMsgs] = useState<Msg[]>(initial);
   const [text, setText] = useState('');
@@ -85,6 +85,17 @@ export default function ChatClient({ initial, firstName }: { initial: { id: stri
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [msgs, busy]);
+
+  // Mensagem vinda da barra do Início: envia na hora
+  const sentInitial = useRef(false);
+  useEffect(() => {
+    if (initialQuery && !sentInitial.current) {
+      sentInitial.current = true;
+      window.history.replaceState(null, '', '/jarbas');
+      send(initialQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery]);
 
   function toggleVoice() {
     const next = !voiceOn;

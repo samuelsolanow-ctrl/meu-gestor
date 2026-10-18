@@ -286,3 +286,8 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
 .jbar-tip strong { color: var(--text); }
 .jbar-dot { width: 8px; height: 8px; border-radius: 4px; background: var(--accent); margin-top: 7px; flex-shrink: 0; }
 @media (prefers-reduced-motion: reduce) { .jbar.live .jbar-btn { animation: none; } }
+
+/* Escolha da voz */
+.voice-opt { width: 100%; background: none; border: none; border-top: 1px solid var(--surface-2); color: var(--text); cursor: pointer; padding: 12px 0; }
+.list > .voice-opt:first-child { border-top: none; }
+.voice-opt.on .item-icon { background: var(--accent-soft); color: var(--accent); }

@@ -4,6 +4,7 @@ import { createAccountAction, createGoalAction, signOutAction } from '../actions
 import FaceIdToggle from '@/components/FaceIdToggle';
 import NotificationsToggle from '@/components/NotificationsToggle';
 import CalendarConnect from '@/components/CalendarConnect';
+import VoicePicker from '@/components/VoicePicker';
 import { headers } from 'next/headers';
 import { agendaSig, appOrigin } from '@/lib/secrets';
 
@@ -134,6 +135,8 @@ export default async function MaisPage() {
           </form>
         </details>
       </section>
+
+      <VoicePicker firstName={firstName} />
 
       <NotificationsToggle />
 

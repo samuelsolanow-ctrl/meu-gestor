@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { IconMic, IconSend, IconStop } from './icons';
+import { unlockAudio } from '@/lib/voice';
 
 // Mesma "escuta" do chat (o iPhone pede o microfone uma vez por uso)
 function getRecognition(): any | null {
@@ -14,13 +15,7 @@ function getRecognition(): any | null {
   return w.__mgRec;
 }
 
-function unlockSpeech() {
-  try {
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0;
-    window.speechSynthesis?.speak(u);
-  } catch {}
-}
+const unlockSpeech = () => unlockAudio();
 
 const SUGGESTIONS = ['Gastei 50 no mercado', 'Me lembra às 15h', 'Resumo do mês'];
 

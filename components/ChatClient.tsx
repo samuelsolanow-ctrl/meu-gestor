@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { IconCheck, IconMic, IconSend, IconSpeaker, IconSpeakerOff, IconStop } from './icons';
+import { say, stopVoice, unlockAudio } from '@/lib/voice';
 
 type Action = { kind: string; title: string; sub: string; amount?: number; income?: boolean };
 type Msg = { id: string; role: 'user' | 'assistant' | 'action'; content: string; action?: Action };
@@ -24,42 +25,11 @@ function getRecognition(): any | null {
   return w.__mgRec;
 }
 
-function cleanForSpeech(text: string) {
-  return text
-    .replace(/[*_#`>]/g, '')
-    .replace(/R\$\s?([\d.]+),(\d{2})/g, (_m, inteiro, cent) => `${inteiro.replace(/\./g, '')} reais${cent !== '00' ? ` e ${Number(cent)} centavos` : ''}`)
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function pickVoice(): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis?.getVoices?.() ?? [];
-  const pt = voices.filter((v) => v.lang?.toLowerCase().startsWith('pt-br'));
-  return pt.find((v) => /luciana|felipe|premium|enhanced|aprimorad/i.test(v.name)) ?? pt[0] ?? null;
-}
-
-function speak(text: string, queue = false) {
-  try {
-    const synth = window.speechSynthesis;
-    if (!synth || !text.trim()) return;
-    if (!queue) synth.cancel();
-    const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
-    u.lang = 'pt-BR';
-    const v = pickVoice();
-    if (v) u.voice = v;
-    u.rate = 1.05;
-    synth.speak(u);
-  } catch {}
-}
-
-// O iPhone só deixa falar depois de um toque: "destrava" a voz no toque de enviar
-function unlockSpeech() {
-  try {
-    const u = new SpeechSynthesisUtterance(' ');
-    u.volume = 0;
-    window.speechSynthesis?.speak(u);
-  } catch {}
-}
+const speak = (text: string, queue = false) => {
+  if (!queue) stopVoice();
+  say(text);
+};
+const unlockSpeech = () => unlockAudio();
 
 export default function ChatClient({ initial, firstName, initialQuery }: { initial: { id: string; role: 'user' | 'assistant'; content: string }[]; firstName: string; initialQuery?: string }) {
   const router = useRouter();
@@ -108,7 +78,7 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
       unlockSpeech();
       setHint('Respostas em voz ligadas.');
     } else {
-      window.speechSynthesis?.cancel();
+      stopVoice();
       setHint('Respostas em voz desligadas.');
     }
     setTimeout(() => setHint(''), 2500);
@@ -117,7 +87,7 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
   async function send(raw: string) {
     const message = raw.trim();
     if (!message || busy) return;
-    window.speechSynthesis?.cancel();
+    stopVoice();
     if (voiceOnRef.current) unlockSpeech();
     setText('');
     setHint('');
@@ -292,7 +262,7 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
           ) : !m.content ? null : (
             <div key={m.id} className="bubble bot">
               {m.content}
-              <button type="button" className="listen" onClick={() => speak(m.content)} aria-label="Ouvir esta resposta">
+              <button type="button" className="listen" onClick={() => { unlockSpeech(); speak(m.content); }} aria-label="Ouvir esta resposta">
                 <IconSpeaker size={15} /> Ouvir
               </button>
             </div>

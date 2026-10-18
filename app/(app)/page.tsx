@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { getContext, pickSpace } from '@/lib/context';
 import { monthSummary } from '@/lib/finance';
+import { fmtWhen } from '@/lib/agenda';
 import { brl, daysBetween, dueLabel, monthName, monthRange, shortDate, todaySP } from '@/lib/format';
 import {
-  IconArrowDown, IconArrowUp, IconBills, IconChat, IconChevron, IconList, IconMinus, IconPlus, IconReceipt, IconTarget,
+  IconArrowDown, IconArrowUp, IconBills, IconCalendar, IconChat, IconChevron, IconList, IconMinus, IconPlus, IconReceipt, IconTarget,
 } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -28,12 +29,14 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
   const daysLeft = daysBetween(today, end);
   const q = key === 'pessoal' ? '?e=pessoal' : '';
 
-  const [summary, billsRes, goalsRes, txRes] = await Promise.all([
+  const [summary, billsRes, goalsRes, txRes, evRes] = await Promise.all([
     monthSummary(db, space.id, today),
     db.from('bills').select('id, name, amount, due_date').eq('space_id', space.id).eq('status', 'open').order('due_date').limit(4),
     db.from('goals').select('id, name, target_amount, current_amount, deadline').eq('space_id', space.id).order('created_at'),
     db.from('transactions').select('id, kind, amount, description, occurred_on, categories(name)').eq('space_id', space.id).order('occurred_on', { ascending: false }).order('created_at', { ascending: false }).limit(5),
+    db.from('events').select('id, kind, title, starts_at, space_id').gte('starts_at', new Date(Date.now() - 3_600_000).toISOString()).order('starts_at').limit(4),
   ]);
+  const events = evRes.error ? [] : evRes.data ?? [];
   const bills = billsRes.data ?? [];
   const goals = goalsRes.data ?? [];
   const txs = txRes.data ?? [];
@@ -113,6 +116,33 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         <span className="insight-text"><strong style={{ color: 'var(--text)' }}>Jarbas</strong> · {tip}</span>
         <span className="insight-go"><IconChevron /></span>
       </Link>
+
+      <section className="card" aria-label="Agenda">
+        <div className="section-head">
+          <h2>Agenda</h2>
+          <Link href="/jarbas">Agendar</Link>
+        </div>
+        {events.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon"><IconCalendar /></span>
+            <div>
+              <p>Nada marcado. Diga ao Jarbas “amanhã tenho dentista às 8, me lembra 1 hora antes”.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="list">
+            {events.map((ev: any) => (
+              <div className="item" key={ev.id}>
+                <div className="item-icon"><IconCalendar size={18} /></div>
+                <div className="grow">
+                  <div className="item-title">{ev.kind === 'reminder' ? `Lembrete: ${ev.title}` : ev.title}</div>
+                  <div className="item-sub">{fmtWhen(ev.starts_at)}{ev.space_id === ctx.casal.id ? ' · Família' : ''}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className="card" aria-label="Próximas contas">
         <div className="section-head">

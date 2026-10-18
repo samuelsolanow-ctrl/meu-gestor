@@ -3,6 +3,9 @@ import { brl } from '@/lib/format';
 import { createAccountAction, createGoalAction, signOutAction } from '../actions';
 import FaceIdToggle from '@/components/FaceIdToggle';
 import NotificationsToggle from '@/components/NotificationsToggle';
+import CalendarConnect from '@/components/CalendarConnect';
+import { headers } from 'next/headers';
+import { agendaSig, appOrigin } from '@/lib/secrets';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +25,12 @@ export default async function MaisPage() {
     ctx.supabase.from('accounts').select('id, name, institution, type, space_id, closing_day, due_day').eq('archived', false).order('name'),
     ctx.supabase.from('goals').select('id, name, target_amount, current_amount, space_id').order('created_at'),
   ]);
+  let calendar: { webcal: string; https: string } | null = null;
+  try {
+    const origin = appOrigin((await headers()).get('host'));
+    const path = `/api/agenda/${ctx.userId}.${agendaSig(ctx.userId)}.ics`;
+    calendar = { https: origin + path, webcal: origin.replace(/^https?:/, 'webcal:') + path };
+  } catch {}
   const whose = (spaceId: string) => (spaceId === ctx.casal.id ? 'Família' : firstName);
 
   return (
@@ -127,6 +136,8 @@ export default async function MaisPage() {
       </section>
 
       <NotificationsToggle />
+
+      {calendar && <CalendarConnect webcal={calendar.webcal} https={calendar.https} />}
 
       <FaceIdToggle userName={ctx.name} />
 

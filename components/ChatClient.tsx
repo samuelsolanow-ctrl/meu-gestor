@@ -33,11 +33,11 @@ function pickVoice(): SpeechSynthesisVoice | null {
   return pt.find((v) => /luciana|felipe|premium|enhanced|aprimorad/i.test(v.name)) ?? pt[0] ?? null;
 }
 
-function speak(text: string) {
+function speak(text: string, queue = false) {
   try {
     const synth = window.speechSynthesis;
-    if (!synth) return;
-    synth.cancel();
+    if (!synth || !text.trim()) return;
+    if (!queue) synth.cancel();
     const u = new SpeechSynthesisUtterance(cleanForSpeech(text));
     u.lang = 'pt-BR';
     const v = pickVoice();
@@ -101,25 +101,83 @@ export default function ChatClient({ initial, firstName }: { initial: { id: stri
   async function send(raw: string) {
     const message = raw.trim();
     if (!message || busy) return;
+    window.speechSynthesis?.cancel();
     if (voiceOnRef.current) unlockSpeech();
     setText('');
     setHint('');
     setBusy(true);
-    setMsgs((m) => [...m, { id: `u${Date.now()}`, role: 'user', content: message }]);
+    const botId = `b${Date.now()}`;
+    setMsgs((m) => [...m, { id: `u${Date.now()}`, role: 'user', content: message }, { id: botId, role: 'assistant', content: '' }]);
+
+    let full = '';
+    let spoken = 0;
+    const speakReady = (final = false) => {
+      if (!voiceOnRef.current) return;
+      const rest = full.slice(spoken);
+      const m = final ? rest.length : Math.max(rest.lastIndexOf('. '), rest.lastIndexOf('! '), rest.lastIndexOf('? '), rest.lastIndexOf('\n'));
+      if (m <= 0) return;
+      const cut = final ? rest.length : m + 1;
+      speak(rest.slice(0, cut), true);
+      spoken += cut;
+    };
+    const setBot = (content: string) => setMsgs((ms) => ms.map((x) => (x.id === botId ? { ...x, content } : x)));
+    const addAction = (a: Action) =>
+      setMsgs((ms) => {
+        const i = ms.findIndex((x) => x.id === botId);
+        const card: Msg = { id: `a${Date.now()}${Math.random()}`, role: 'action', content: '', action: a };
+        return i < 0 ? [...ms, card] : [...ms.slice(0, i), card, ...ms.slice(i)];
+      });
+
     try {
       const res = await fetch('/api/jarbas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
       });
-      const data = await res.json().catch(() => ({}));
-      const actionMsgs: Msg[] = (data.actions ?? []).map((a: Action, i: number) => ({ id: `a${Date.now()}${i}`, role: 'action', content: '', action: a }));
-      const reply = data.reply ?? data.error ?? 'Não consegui responder agora.';
-      setMsgs((m) => [...m, ...actionMsgs, { id: `b${Date.now()}`, role: 'assistant', content: reply }]);
-      if (voiceOnRef.current) speak(reply);
-      if (actionMsgs.length) router.refresh();
+      if (!res.ok || !res.body || !(res.headers.get('content-type') || '').includes('ndjson')) {
+        const data = await res.json().catch(() => ({}));
+        full = data.error ?? 'Não consegui responder agora.';
+        setBot(full);
+        speakReady(true);
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      let refresh = false;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          let ev: any;
+          try {
+            ev = JSON.parse(line);
+          } catch {
+            continue;
+          }
+          if (ev.t === 'text') {
+            full += ev.d;
+            setBot(full);
+            speakReady();
+          } else if (ev.t === 'action') {
+            addAction(ev.a);
+          } else if (ev.t === 'error') {
+            full = full ? `${full}\n${ev.d}` : ev.d;
+            setBot(full);
+          } else if (ev.t === 'done') {
+            refresh = !!ev.refresh;
+          }
+        }
+      }
+      speakReady(true);
+      if (refresh) router.refresh();
     } catch {
-      setMsgs((m) => [...m, { id: `e${Date.now()}`, role: 'assistant', content: 'Sem conexão. Tente de novo.' }]);
+      setBot(full || 'Sem conexão. Tente de novo.');
     } finally {
       setBusy(false);
     }
@@ -142,14 +200,27 @@ export default function ChatClient({ initial, firstName }: { initial: { id: stri
     rec.interimResults = true;
     rec.continuous = false;
     let finalText = '';
+    let lastHeard = '';
+    let silence: any = null;
+    const armSilence = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => {
+        try {
+          rec.stop();
+        } catch {}
+      }, 900); // 0,9 s de silêncio = terminou de falar
+    };
     rec.onresult = (e: any) => {
+      armSilence();
       let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
         if (r.isFinal) finalText += r[0].transcript;
         else interim += r[0].transcript;
       }
-      setText((finalText + interim).trim());
+      const now = (finalText + interim).trim();
+      setText(now);
+      lastHeard = now;
     };
     rec.onerror = (e: any) => {
       setListening(false);
@@ -160,8 +231,9 @@ export default function ChatClient({ initial, firstName }: { initial: { id: stri
       }
     };
     rec.onend = () => {
+      clearTimeout(silence);
       setListening(false);
-      const said = finalText.trim();
+      const said = (lastHeard || finalText).trim();
       if (said) send(said);
     };
     try {
@@ -201,7 +273,7 @@ export default function ChatClient({ initial, firstName }: { initial: { id: stri
             </div>
           ) : m.role === 'user' ? (
             <div key={m.id} className="bubble user">{m.content}</div>
-          ) : (
+          ) : !m.content ? null : (
             <div key={m.id} className="bubble bot">
               {m.content}
               <button type="button" className="listen" onClick={() => speak(m.content)} aria-label="Ouvir esta resposta">
@@ -210,7 +282,7 @@ export default function ChatClient({ initial, firstName }: { initial: { id: stri
             </div>
           ),
         )}
-        {busy && <div className="typing" role="status">Jarbas está pensando…</div>}
+        {busy && !msgs[msgs.length - 1]?.content && <div className="typing" role="status">Jarbas está pensando…</div>}
         <div ref={endRef} />
       </div>
 

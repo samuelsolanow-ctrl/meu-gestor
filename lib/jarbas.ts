@@ -1,9 +1,14 @@
 import type { AppContext } from '@/lib/context';
 import { addBill, addTransaction, monthSummary, payBill } from '@/lib/finance';
 import { brl, longDate, todaySP } from '@/lib/format';
+import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
+import { ensureSchema } from '@/lib/migrate';
 
 /** Ação mostrada como cartão no chat */
-export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted'; title: string; sub: string; amount?: number; income?: boolean };
+export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
+
+/** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -111,6 +116,37 @@ export const TOOLS = [
     },
   },
   {
+    name: 'agendar',
+    description: 'Cria um compromisso ou lembrete na agenda (aparece no Calendário do iPhone) e agenda a notificação. Use para "amanhã tenho dentista às 8", "me lembra às 15h de fazer o Pix", "conta às 10, me avisa 1 hora antes".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        titulo: { type: 'string', description: 'Curto: "Dentista", "Fazer o Pix do aluguel", "Pagar conta de luz"' },
+        tipo: { type: 'string', enum: ['compromisso', 'lembrete'], description: 'lembrete = só um aviso na hora; compromisso = evento com horário' },
+        inicio: { type: 'string', description: 'Data e hora local AAAA-MM-DDTHH:MM (horário de São Paulo)' },
+        fim: { type: 'string', description: 'Opcional, AAAA-MM-DDTHH:MM' },
+        lembrar_minutos_antes: { type: 'number', description: 'Minutos antes para avisar. Lembrete: 0. Compromisso sem pedido explícito: 30.' },
+        espaco: { type: 'string', enum: ['casal', 'pessoal'], description: 'pessoal por padrão; casal se for da família toda' },
+        observacao: { type: 'string' },
+      },
+      required: ['titulo', 'tipo', 'inicio', 'espaco'],
+    },
+  },
+  {
+    name: 'listar_agenda',
+    description: 'Lista compromissos e lembretes entre duas datas, com id.',
+    input_schema: {
+      type: 'object',
+      properties: { de: { type: 'string', description: 'AAAA-MM-DD' }, ate: { type: 'string', description: 'AAAA-MM-DD' } },
+      required: ['de', 'ate'],
+    },
+  },
+  {
+    name: 'cancelar_compromisso',
+    description: 'Apaga um compromisso ou lembrete da agenda (use o id de listar_agenda ou de um agendamento feito agora).',
+    input_schema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+  },
+  {
     name: 'aportar_meta',
     description: 'Soma um valor guardado em uma meta (use valor negativo para retirar).',
     input_schema: {
@@ -121,12 +157,36 @@ export const TOOLS = [
   },
 ] as const;
 
-export async function buildSystemPrompt(ctx: AppContext) {
+const STATIC_PROMPT = `Você é o Jarbas, assessor financeiro e secretário pessoal da família dentro do app Meu Gestor.
+
+Espaços:
+- "casal": a Família, as finanças da casa (no app aparece como "Família"). O dinheiro do casal é todo junto. É o PADRÃO para dinheiro.
+- "pessoal": só da pessoa com quem você fala. Use se ela disser que é pessoal, "só meu", "da minha conta". Na agenda, compromissos são pessoais por padrão.
+Você não tem acesso ao espaço pessoal de outra pessoa.
+
+Como agir:
+- Seja rápido e proativo. Faça na hora, sem pedir confirmação para coisas óbvias.
+- IMPORTANTE para ser rápido: quando for gravar algo (lançar, agendar, pagar, criar), escreva PRIMEIRO a confirmação curta para a pessoa e, no mesmo turno, chame a(s) ferramenta(s). Ex.: "Anotado: R$ 85,00 de mercado na Família." + registrar_lancamento.
+- Gasto ou receita contado → registrar_lancamento com a categoria mais adequada da lista.
+- Compromissos, lembretes e "me lembra" → agendar. Converta datas e horas relativas ("amanhã às 8", "sexta 15h", "daqui 2 horas") para AAAA-MM-DDTHH:MM com base no momento atual. "Me lembra 1 hora antes" → lembrar_minutos_antes = 60. Se a pessoa não disser quando avisar, compromisso avisa 30 minutos antes e lembrete avisa na hora (0).
+- Conta a pagar num horário ("amanhã tenho que pagar a conta às 10") → agende o lembrete; se houver valor, cadastre também com criar_conta_a_pagar.
+- Se perceber conflito com algo já na agenda, avise numa frase.
+- "Paguei a conta de luz" → listar_contas_a_pagar e marcar_conta_paga; se não existir conta cadastrada, registre como despesa.
+- Perguntas sobre dinheiro ou agenda → consulte com as ferramentas antes de responder. Nunca invente números.
+- Se faltar um dado essencial (o valor, o horário), pergunte de forma curta.
+- Você sugere, mas não move dinheiro nem compra investimentos.
+- Você também avisa sozinho: lembretes na hora marcada, contas às 8h e um fechamento do dia às 21h. Se a pessoa responder a um aviso ("paguei", "não teve nada"), aja de acordo.
+- Responda em português do Brasil, curto e natural, como numa conversa de WhatsApp: no máximo 2 frases, sem markdown. Valores no formato R$ 1.234,56. As respostas podem ser lidas em voz alta.`;
+
+/** Parte fixa (com cache, mais rápida e barata) + parte que muda a cada conversa. */
+export async function buildSystem(ctx: AppContext) {
   const db = ctx.supabase;
-  const [{ data: cats }, { data: accounts }, { data: members }] = await Promise.all([
+  const now = new Date();
+  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }] = await Promise.all([
     db.from('categories').select('name, kind').order('name'),
     db.from('accounts').select('name, type, institution, space_id').eq('archived', false),
     db.from('profiles').select('id, display_name'),
+    db.from('events').select('title, starts_at').gte('starts_at', now.toISOString()).lte('starts_at', new Date(now.getTime() + 3 * 86_400_000).toISOString()).order('starts_at').limit(12),
   ]);
   const today = todaySP();
   const weekday = WEEKDAYS[new Date(Date.parse(today + 'T12:00:00Z')).getUTCDay()];
@@ -136,31 +196,19 @@ export async function buildSystemPrompt(ctx: AppContext) {
   const accs = (accounts ?? [])
     .map((a: any) => `${a.name}${a.institution ? ` (${a.institution})` : ''} — ${a.space_id === ctx.casal.id ? 'família' : 'pessoal'}`)
     .join('; ');
+  const proximos = (agenda ?? []).map((e: any) => `${e.title} (${fmtWhen(e.starts_at)})`).join('; ');
 
-  return `Você é o Jarbas, assessor financeiro e pessoal da família dentro do app Meu Gestor.
-Você conversa com ${ctx.name}${others.length ? ` (que divide o espaço Casal com ${others.join(' e ')})` : ''}.
-Hoje é ${weekday}, ${longDate(today)} (${today}). Fuso: São Paulo.
-
-Espaços:
-- "casal": a Família, as finanças da casa (no app aparece como "Família"). O dinheiro do casal é todo junto. É o PADRÃO: use quando a pessoa não disser nada.
-- "pessoal": só de ${ctx.name}. Use apenas se a pessoa disser que é pessoal, "só meu", "da minha conta", etc.
-Você não tem acesso ao espaço pessoal de outra pessoa.
-
+  const dynamic = `Você conversa com ${ctx.name}${others.length ? ` (que divide a Família com ${others.join(' e ')})` : ''}.
+Agora: ${weekday}, ${longDate(today)}, ${localIso(now).slice(11)} (${localIso(now)}), horário de São Paulo.
 Categorias de despesa: ${expense || '(nenhuma)'}.
 Categorias de receita: ${income || '(nenhuma)'}.
-Contas e cartões cadastrados: ${accs || 'nenhum ainda (pode lançar sem conta)'}.
+Contas e cartões: ${accs || 'nenhum ainda (pode lançar sem conta)'}.
+Agenda dos próximos 3 dias: ${proximos || 'nada marcado'}.`;
 
-Como agir:
-- Quando a pessoa contar um gasto ou receita, registre na hora com registrar_lancamento, escolhendo a categoria mais adequada da lista. Não peça confirmação para coisas óbvias.
-- Datas relativas ("ontem", "sexta") viram AAAA-MM-DD com base em hoje.
-- "Paguei a conta de luz" → procure com listar_contas_a_pagar e use marcar_conta_paga; se não existir conta cadastrada, registre como despesa.
-- Para perguntas ("quanto gastamos com mercado?", "dá para viajar em julho?"), consulte os dados com as ferramentas antes de responder. Nunca invente números.
-- Se faltar um dado essencial (o valor, por exemplo), pergunte de forma curta.
-- Você sugere, mas não move dinheiro nem compra investimentos. Em recomendações, mostre os números e o raciocínio.
-- Responda em português do Brasil, curto e simpático, como numa conversa de WhatsApp. Valores sempre no formato R$ 1.234,56. Sem markdown pesado: no máximo listas simples.
-- Depois de registrar algo, confirme em uma frase (o app já mostra um cartão com os detalhes).
-- Você também manda avisos sozinho: às 8h sobre contas que vencem e às 21h perguntando dos gastos do dia. Se a pessoa responder a um aviso ("paguei", "não teve nada", "gastei 30 no almoço"), aja de acordo.
-- As respostas podem ser lidas em voz alta: prefira frases curtas e naturais, sem listas longas.`;
+  return [
+    { type: 'text', text: STATIC_PROMPT, cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: dynamic },
+  ];
 }
 
 export async function runTool(ctx: AppContext, name: string, input: any, actions: ChatAction[]): Promise<string> {
@@ -181,6 +229,8 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
     const hit = (data ?? []).find((a: any) => norm(a.name) === n) ?? (data ?? []).find((a: any) => norm(a.name).includes(n) || n.includes(norm(a.name)) || (a.institution && n.includes(norm(a.institution))));
     return hit?.id ?? null;
   }
+
+  if (name === 'agendar' || name === 'listar_agenda' || name === 'cancelar_compromisso') await ensureSchema();
 
   switch (name) {
     case 'registrar_lancamento': {
@@ -303,6 +353,55 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       if (upErr) throw new Error(upErr.message);
       actions.push({ kind: 'goal', title: `Meta: ${g.name}`, sub: `${brl(next)} de ${brl(g.target_amount)}` });
       return JSON.stringify({ ok: true, valor_atual: next, alvo: Number(g.target_amount) });
+    }
+    case 'agendar': {
+      const start = parseLocal(String(input.inicio));
+      if (isNaN(start.getTime())) return JSON.stringify({ ok: false, erro: 'Data/hora inválida' });
+      const isReminder = input.tipo === 'lembrete';
+      const before = Number.isFinite(Number(input.lembrar_minutos_antes)) ? Number(input.lembrar_minutos_antes) : isReminder ? 0 : 30;
+      const remind = new Date(start.getTime() - Math.max(0, before) * 60_000);
+      const end = input.fim ? parseLocal(String(input.fim)) : null;
+      const { data, error } = await db
+        .from('events')
+        .insert({
+          space_id: input.espaco === 'casal' ? ctx.casal.id : ctx.pessoal.id,
+          user_id: ctx.userId,
+          kind: isReminder ? 'reminder' : 'event',
+          title: String(input.titulo),
+          notes: input.observacao || null,
+          starts_at: start.toISOString(),
+          ends_at: end && !isNaN(end.getTime()) ? end.toISOString() : null,
+          remind_at: remind.getTime() > Date.now() - 60_000 ? remind.toISOString() : null,
+        })
+        .select('id')
+        .single();
+      if (error) throw new Error(error.message);
+      actions.push({
+        kind: 'event',
+        title: String(input.titulo),
+        sub: `${fmtWhen(start)}${before > 0 ? ` · aviso ${before >= 60 && before % 60 === 0 ? `${before / 60}h` : `${before} min`} antes` : ' · aviso na hora'}`,
+      });
+      return JSON.stringify({ ok: true, id: data.id, quando: fmtWhen(start) });
+    }
+    case 'listar_agenda': {
+      const de = parseLocal(`${input.de}T00:00`);
+      const ate = parseLocal(`${input.ate}T23:59`);
+      const { data, error } = await db
+        .from('events')
+        .select('id, kind, title, starts_at, remind_at, space_id')
+        .gte('starts_at', de.toISOString())
+        .lte('starts_at', ate.toISOString())
+        .order('starts_at')
+        .limit(60);
+      if (error) throw new Error(error.message);
+      return JSON.stringify((data ?? []).map((e: any) => ({ id: e.id, tipo: e.kind === 'reminder' ? 'lembrete' : 'compromisso', titulo: e.title, quando: fmtWhen(e.starts_at), espaco: spaceName(e.space_id) })));
+    }
+    case 'cancelar_compromisso': {
+      const { data, error } = await db.from('events').delete().eq('id', String(input.id)).select('title').maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return JSON.stringify({ ok: false, erro: 'Não encontrado' });
+      actions.push({ kind: 'deleted', title: `${data.title} cancelado`, sub: 'Removido da agenda' });
+      return JSON.stringify({ ok: true });
     }
     default:
       return JSON.stringify({ ok: false, erro: `Ferramenta desconhecida: ${name}` });

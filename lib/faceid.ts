@@ -48,6 +48,7 @@ export async function enableFaceId(userName: string): Promise<void> {
   if (!cred) throw new Error('Face ID cancelado');
   try {
     localStorage.setItem(KEY, JSON.stringify({ credId: toB64(cred.rawId) }));
+    document.cookie = 'mg-lock=1; path=/; max-age=31536000; samesite=lax; secure';
   } catch {
     throw new Error('Não foi possível salvar neste aparelho');
   }
@@ -57,6 +58,7 @@ export function disableFaceId() {
   try {
     localStorage.removeItem(KEY);
   } catch {}
+  document.cookie = 'mg-lock=; path=/; max-age=0';
 }
 
 export async function verifyFaceId(credId: string): Promise<boolean> {

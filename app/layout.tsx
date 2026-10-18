@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from 'next';
+import { Instrument_Serif, Plus_Jakarta_Sans } from 'next/font/google';
 import './globals.css';
+
+const serif = Instrument_Serif({ subsets: ['latin'], weight: '400', variable: '--font-serif', display: 'swap' });
+const sans = Plus_Jakarta_Sans({ subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], variable: '--font-sans', display: 'swap' });
 
 export const metadata: Metadata = {
   title: 'Meu Gestor',
@@ -22,15 +26,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
-        />
-      </head>
+    <html lang="pt-BR" className={`${serif.variable} ${sans.variable}`}>
       <body>{children}</body>
     </html>
   );

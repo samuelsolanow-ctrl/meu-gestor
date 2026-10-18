@@ -7,9 +7,9 @@ import { IconLogo } from './icons';
 
 const RELOCK_AFTER_MS = 60_000; // 1 minuto fora do app
 
-export default function AppLock({ children }: { children: React.ReactNode }) {
-  // 'checking' cobre a tela até sabermos se a trava está ligada
-  const [state, setState] = useState<'checking' | 'locked' | 'open'>('checking');
+export default function AppLock({ children, initialLocked }: { children: React.ReactNode; initialLocked: boolean }) {
+  // Sem trava: o app aparece direto. Com trava: já abre na tela do Face ID.
+  const [state, setState] = useState<'locked' | 'open'>(initialLocked ? 'locked' : 'open');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const hiddenAt = useRef<number | null>(null);
@@ -27,12 +27,12 @@ export default function AppLock({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!getLock()) {
+    if (getLock()) {
+      setState('locked');
+      unlock(true);
+    } else {
       setState('open');
-      return;
     }
-    setState('locked');
-    unlock(true);
 
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
@@ -44,6 +44,7 @@ export default function AppLock({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unlock]);
 
   async function signInWithPassword() {
@@ -64,7 +65,7 @@ export default function AppLock({ children }: { children: React.ReactNode }) {
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28, padding: 32,
           }}
         >
-          {state === 'locked' && (
+          {(
             <>
               <span className="brand-mark" style={{ width: 72, height: 72, borderRadius: 20 }}><IconLogo size={40} /></span>
               <div style={{ textAlign: 'center' }}>

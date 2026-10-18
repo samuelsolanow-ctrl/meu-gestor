@@ -23,9 +23,15 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getClaims confere a assinatura do token localmente (e renova se expirou)
+  let user: string | null = null;
+  if (typeof (supabase.auth as any).getClaims === 'function') {
+    const { data } = await (supabase.auth as any).getClaims();
+    user = data?.claims?.sub ?? null;
+  } else {
+    const { data } = await supabase.auth.getUser();
+    user = data?.user?.id ?? null;
+  }
 
   const path = request.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));

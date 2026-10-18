@@ -15,8 +15,8 @@
   --warn: #f5b04b;
   --late: #fb923c;
   --radius: 20px;
-  --serif: 'Instrument Serif', Georgia, serif;
-  --sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --serif: var(--font-serif), Georgia, serif;
+  --sans: var(--font-sans), system-ui, -apple-system, sans-serif;
   color-scheme: dark;
 }
 

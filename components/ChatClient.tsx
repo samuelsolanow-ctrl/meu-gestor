@@ -13,10 +13,15 @@ const SUGGESTIONS = ['Resumo do mês', 'Contas desta semana', 'Quanto gastamos c
 const VOICE_KEY = 'mg-voz';
 
 // ---------- Voz (tudo pelo próprio iPhone, sem custo) ----------
+// Uma única "escuta" para o app inteiro: o iPhone pede o microfone uma vez por uso, não a cada áudio
 function getRecognition(): any | null {
   if (typeof window === 'undefined') return null;
-  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  return SR ? new SR() : null;
+  const w = window as any;
+  if (w.__mgRec) return w.__mgRec;
+  const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+  if (!SR) return null;
+  w.__mgRec = new SR();
+  return w.__mgRec;
 }
 
 function cleanForSpeech(text: string) {

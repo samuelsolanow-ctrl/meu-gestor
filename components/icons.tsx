@@ -12,8 +12,13 @@ const base = (size: number) => ({
   'aria-hidden': true,
 });
 
-export const IconLogo = ({ size = 20 }: P) => (
-  <svg {...base(size)} strokeWidth={2.2}><path d="M4 17l5-5 4 4 7-8" /><path d="M15 8h5v5" /></svg>
+// Logo "Casa que cresce": o telhado vira uma seta para cima
+export const IconLogo = ({ size = 22 }: P) => (
+  <svg {...base(size)} viewBox="22 26 88 82" strokeWidth={11}>
+    <path d="M30 100V64l30-24 18 14" />
+    <path d="M30 100h72V74" />
+    <path d="M70 66l32-32M84 34h18v18" />
+  </svg>
 );
 export const IconHome = ({ size = 22 }: P) => (
   <svg {...base(size)}><path d="M3 10l9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg>

@@ -5,7 +5,21 @@ import { createClient } from '@/lib/supabase/client';
 import { getLock, verifyFaceId } from '@/lib/faceid';
 import { IconLogo } from './icons';
 
-const RELOCK_AFTER_MS = 60_000; // 1 minuto fora do app
+const RELOCK_AFTER_MS = 15 * 60_000; // só pede de novo depois de 15 min sem usar
+const LAST_KEY = 'mg-unlocked-at';
+
+const recentlyUnlocked = () => {
+  try {
+    return Date.now() - Number(localStorage.getItem(LAST_KEY) || 0) < RELOCK_AFTER_MS;
+  } catch {
+    return false;
+  }
+};
+const markActive = () => {
+  try {
+    localStorage.setItem(LAST_KEY, String(Date.now()));
+  } catch {}
+};
 
 export default function AppLock({ children, initialLocked }: { children: React.ReactNode; initialLocked: boolean }) {
   // Sem trava: o app aparece direto. Com trava: já abre na tela do Face ID.
@@ -22,12 +36,14 @@ export default function AppLock({ children, initialLocked }: { children: React.R
     setFailed(false);
     const ok = await verifyFaceId(lock.credId);
     setBusy(false);
-    if (ok) setState('open');
-    else if (!auto) setFailed(true);
+    if (ok) {
+      markActive();
+      setState('open');
+    } else if (!auto) setFailed(true);
   }, []);
 
   useEffect(() => {
-    if (getLock()) {
+    if (getLock() && !recentlyUnlocked()) {
       setState('locked');
       unlock(true);
     } else {
@@ -37,6 +53,7 @@ export default function AppLock({ children, initialLocked }: { children: React.R
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         hiddenAt.current = Date.now();
+        markActive(); // conta a partir da última vez que você usou
       } else if (hiddenAt.current && Date.now() - hiddenAt.current > RELOCK_AFTER_MS && getLock()) {
         setState('locked');
         unlock(true);

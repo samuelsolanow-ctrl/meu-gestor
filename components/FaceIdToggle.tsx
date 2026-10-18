@@ -43,7 +43,7 @@ export default function FaceIdToggle({ userName }: { userName: string }) {
         <>
           <p className="small muted">
             {on
-              ? 'Ligado: o app pede seu rosto ao abrir e quando você volta depois de 1 minuto.'
+              ? 'Ligado: o app pede seu rosto quando você fica mais de 15 minutos sem usar.'
               : 'Seu login já fica salvo. Ative para o app pedir Face ID antes de mostrar suas finanças.'}
           </p>
           <button className={`btn btn-block ${on ? '' : 'btn-primary'}`} onClick={toggle} disabled={busy || available === null}>

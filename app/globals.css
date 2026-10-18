@@ -158,3 +158,8 @@ details.card[open] > summary { margin-bottom: 14px; }
 .auth { max-width: 420px; margin: 0 auto; min-height: 100dvh; padding: calc(40px + env(safe-area-inset-top)) 24px 40px; display: flex; flex-direction: column; gap: 24px; }
 .hero-title { font-family: var(--serif); font-size: 44px; line-height: 1.05; font-weight: 400; }
 .code { font-family: var(--serif); font-size: 48px; letter-spacing: 6px; color: var(--accent); }
+
+/* Esqueleto de carregamento */
+.skeleton { background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; border: none; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

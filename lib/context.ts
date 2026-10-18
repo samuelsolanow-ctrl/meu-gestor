@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 
@@ -12,23 +13,27 @@ export type AppContext = {
   pessoal: Space;
 };
 
-/** Carrega quem está logado, a família e os dois espaços (Casal e pessoal). */
-export async function getContext(): Promise<AppContext> {
+/**
+ * Carrega quem está logado, a família e os dois espaços (Casal e pessoal).
+ * `cache` faz o layout e a página dividirem a mesma busca (uma vez por tela).
+ * O middleware já validou o login; aqui só lemos a sessão do cookie, sem ida
+ * extra ao servidor. As regras do banco (RLS) conferem o token em toda consulta.
+ */
+export const getContext = cache(async (): Promise<AppContext> => {
   const supabase = await createClient();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) redirect('/entrar');
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('id, display_name, family_id')
-    .eq('id', user.id)
-    .maybeSingle();
+  const [{ data: profile }, { data: spaces }] = await Promise.all([
+    supabase.from('profiles').select('id, display_name, family_id').eq('id', user.id).maybeSingle(),
+    supabase.from('spaces').select('id, kind, name, owner_id'),
+  ]);
 
   if (!profile?.family_id) redirect('/bem-vindo');
 
-  const { data: spaces } = await supabase.from('spaces').select('id, kind, name, owner_id');
   const casal = (spaces ?? []).find((s: Space) => s.kind === 'shared');
   const pessoal = (spaces ?? []).find((s: Space) => s.kind === 'personal' && s.owner_id === user.id);
   if (!casal || !pessoal) redirect('/bem-vindo');
@@ -41,7 +46,7 @@ export async function getContext(): Promise<AppContext> {
     casal,
     pessoal,
   };
-}
+});
 
 /** "pessoal" na URL abre o espaço pessoal; qualquer outra coisa abre o Casal. */
 export function pickSpace(ctx: AppContext, e?: string | string[]): { space: Space; key: 'casal' | 'pessoal' } {

@@ -3,6 +3,7 @@ import { getContext, pickSpace } from '@/lib/context';
 import { brl, daysBetween, dueLabel, monthRange, todaySP } from '@/lib/format';
 import { payBillAction } from '../actions';
 import BillForm from '@/components/BillForm';
+import PayButton from '@/components/PayButton';
 import { IconCheck } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ function BillRow({ b, today }: { b: any; today: string }) {
       <span className="amount">{brl(b.amount)}</span>
       <form action={payBillAction}>
         <input type="hidden" name="id" value={b.id} />
-        <button className="check" aria-label={`Marcar ${b.name} como paga`}><span /></button>
+        <PayButton name={b.name} />
       </form>
     </div>
   );

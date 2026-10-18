@@ -21,7 +21,7 @@ export default async function JarbasPage() {
         <div className="avatar">J</div>
         <div className="grow">
           <div style={{ fontWeight: 700 }}>Jarbas</div>
-          <div className="tiny muted">Seu assessor · lança no Casal, a menos que você diga que é pessoal</div>
+          <div className="tiny muted">Seu assessor · lança na Família, a menos que você diga que é pessoal</div>
         </div>
       </header>
       <ChatClient initial={(data ?? []).reverse()} firstName={ctx.name.split(' ')[0]} />

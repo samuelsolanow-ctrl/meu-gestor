@@ -21,7 +21,7 @@ export default async function MaisPage() {
     ctx.supabase.from('accounts').select('id, name, institution, type, space_id, closing_day, due_day').eq('archived', false).order('name'),
     ctx.supabase.from('goals').select('id, name, target_amount, current_amount, space_id').order('created_at'),
   ]);
-  const whose = (spaceId: string) => (spaceId === ctx.casal.id ? 'Casal' : firstName);
+  const whose = (spaceId: string) => (spaceId === ctx.casal.id ? 'Família' : firstName);
 
   return (
     <main className="page">
@@ -35,7 +35,7 @@ export default async function MaisPage() {
         <div>
           <div className="label">Código de convite</div>
           <div className="code" style={{ fontSize: 36 }}>{family?.invite_code}</div>
-          <div className="tiny muted">Quem entrar com esse código passa a ver o espaço do Casal. O seu espaço pessoal continua só seu.</div>
+          <div className="tiny muted">Quem entrar com esse código passa a ver o espaço da Família. O seu espaço pessoal continua só seu.</div>
         </div>
       </section>
 
@@ -85,8 +85,8 @@ export default async function MaisPage() {
             <label className="field">
               <span>De quem é</span>
               <select className="input" name="espaco" defaultValue="casal">
-                <option value="casal">Casal</option>
                 <option value="pessoal">{firstName}</option>
+                <option value="casal">Família</option>
               </select>
             </label>
             <button className="btn btn-primary btn-block">Salvar</button>
@@ -115,8 +115,8 @@ export default async function MaisPage() {
               <label className="field">
                 <span>De quem é</span>
                 <select className="input" name="espaco" defaultValue="casal">
-                  <option value="casal">Casal</option>
                   <option value="pessoal">{firstName}</option>
+                  <option value="casal">Família</option>
                 </select>
               </label>
             </div>

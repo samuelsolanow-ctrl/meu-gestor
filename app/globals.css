@@ -163,3 +163,97 @@ details.card[open] > summary { margin-bottom: 14px; }
 .skeleton { background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite; border: none; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* =====================================================================
+   Polimento visual (v2)
+   ===================================================================== */
+:root {
+  --surface: #111916;
+  --surface-2: #1b2622;
+  --border: #1f2c28;
+  --hairline: rgba(255, 255, 255, 0.04);
+  --radius: 22px;
+}
+body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
+.amount, .value, .big-number, .code { font-variant-numeric: tabular-nums; }
+
+/* Faixa atrás do relógio/bateria do iPhone: o conteúdo some por baixo dela */
+.statusbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+  height: env(safe-area-inset-top);
+  background: rgba(11, 17, 15, 0.92);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+}
+.page { padding-top: calc(24px + env(safe-area-inset-top)); gap: 18px; }
+
+/* Cartões com um leve brilho na borda de cima */
+.card { box-shadow: inset 0 1px 0 var(--hairline); }
+
+/* Cabeçalho */
+.hello { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.hello-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hello-date { font-size: 13px; color: var(--muted); text-transform: capitalize; }
+.hello-name { font-size: 24px; font-weight: 700; letter-spacing: -0.4px; }
+.avatar-btn { flex-shrink: 0; width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; background: var(--surface-2); color: var(--text); font-weight: 700; border: 1px solid var(--border-2); }
+
+/* Seletor de espaço em pílula */
+.seg { border-radius: 16px; padding: 4px; background: var(--bg-2); }
+.seg a, .seg label { height: 38px; border-radius: 12px; font-size: 14px; }
+.seg a.on, .seg input:checked + label { background: var(--surface-2); box-shadow: 0 1px 0 var(--hairline) inset, 0 1px 2px rgba(0,0,0,.35); }
+
+/* Cartão principal do mês */
+.hero {
+  position: relative; overflow: hidden;
+  background: radial-gradient(120% 90% at 100% 0%, rgba(52, 211, 153, 0.16) 0%, rgba(52, 211, 153, 0) 55%), var(--surface);
+  border: 1px solid var(--border); border-radius: 26px; padding: 22px 20px 20px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.hero-top { display: flex; justify-content: space-between; align-items: center; }
+.chip-soft { font-size: 12px; font-weight: 600; color: var(--text-2); background: rgba(255,255,255,.05); border: 1px solid var(--hairline); padding: 5px 10px; border-radius: 999px; }
+.hero .big-number { font-size: 54px; letter-spacing: -0.5px; }
+.flow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.flow-item { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 16px; background: rgba(255,255,255,.03); border: 1px solid var(--hairline); }
+.flow-icon { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0; }
+.flow-icon.in { background: rgba(52, 211, 153, .14); color: var(--accent); }
+.flow-icon.out { background: rgba(251, 146, 60, .14); color: var(--late); }
+.bar-labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+/* Atalhos */
+.quick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.quick a { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--text-2); font-size: 12px; font-weight: 500; text-align: center; }
+.quick-icon { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); color: var(--text); box-shadow: inset 0 1px 0 var(--hairline); }
+.quick a:first-child .quick-icon { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+/* Dica do Jarbas em linha */
+.insight { display: flex; align-items: center; gap: 12px; padding: 14px 14px 14px 16px; border-radius: 20px; background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--text); }
+.insight:hover { color: var(--text); }
+.insight .avatar { width: 36px; height: 36px; font-size: 19px; }
+.insight-text { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.4; color: #d7e2dd; }
+.insight-go { color: var(--accent); flex-shrink: 0; }
+
+/* Títulos de seção e estados vazios */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.section-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.2px; }
+.section-head a { font-size: 13px; font-weight: 600; }
+.empty-state { display: flex; align-items: center; gap: 14px; padding: 6px 0 2px; }
+.empty-icon { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); flex-shrink: 0; }
+.empty-state p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.4; }
+.empty-state .btn { min-height: 36px; padding: 0 14px; font-size: 13px; margin-top: 8px; }
+
+/* Menu inferior flutuante */
+.tabbar {
+  left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom));
+  padding: 6px 8px; border: 1px solid var(--border-2); border-radius: 26px;
+  background: rgba(17, 25, 22, 0.88); box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+.tab { height: 54px; }
+.tab.on { color: var(--accent); }
+.tab-main { width: 52px; height: 52px; border-radius: 18px; box-shadow: 0 6px 18px rgba(52, 211, 153, .35); }
+.shell { padding-bottom: calc(110px + env(safe-area-inset-bottom)); }
+.composer { bottom: calc(86px + env(safe-area-inset-bottom)); }
+.hello-date { text-transform: none; }
+.flow-item { flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; }
+.flow-item .flow-row { display: flex; align-items: center; gap: 8px; }
+.flow-icon { width: 26px; height: 26px; border-radius: 8px; }
+.flow-item .value { white-space: nowrap; font-size: 17px; }
+.tabbar { background: rgba(17, 25, 22, 0.97); }

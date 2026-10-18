@@ -60,8 +60,8 @@ export default function BillForm({
           <label className="field">
             <span>De quem é</span>
             <select className="input" name="espaco" defaultValue={defaultSpace}>
-              <option value="casal">Casal</option>
               <option value="pessoal">{myName}</option>
+              <option value="casal">Família</option>
             </select>
           </label>
         </div>

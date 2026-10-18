@@ -6,9 +6,9 @@ import { IconBack } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LancarPage({ searchParams }: { searchParams: Promise<{ e?: string }> }) {
+export default async function LancarPage({ searchParams }: { searchParams: Promise<{ e?: string; tipo?: string }> }) {
   const ctx = await getContext();
-  const { e } = await searchParams;
+  const { e, tipo } = await searchParams;
   const { key } = pickSpace(ctx, e);
   const [{ data: categories }, { data: accounts }] = await Promise.all([
     ctx.supabase.from('categories').select('id, name, kind').order('name'),
@@ -19,7 +19,7 @@ export default async function LancarPage({ searchParams }: { searchParams: Promi
     <main className="page">
       <header className="row">
         <Link href="/" className="btn btn-icon" aria-label="Voltar ao painel" style={{ border: 'none' }}><IconBack /></Link>
-        <h1 className="page-title">Novo lançamento</h1>
+        <h1 className="page-title">{tipo === 'receita' ? 'Nova entrada' : 'Novo gasto'}</h1>
       </header>
       <p className="small muted">Dica: é mais rápido pedir ao <Link href="/jarbas">Jarbas</Link>, como “gastei 85 no mercado”.</p>
       <TransactionForm
@@ -30,6 +30,7 @@ export default async function LancarPage({ searchParams }: { searchParams: Promi
         today={todaySP()}
         casalId={ctx.casal.id}
         pessoalId={ctx.pessoal.id}
+        defaultTipo={tipo === 'receita' ? 'receita' : 'despesa'}
       />
     </main>
   );

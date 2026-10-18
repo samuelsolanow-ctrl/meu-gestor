@@ -64,8 +64,8 @@ export default async function ContasPage({ searchParams }: { searchParams: Promi
       </header>
 
       <nav className="seg" aria-label="Espaço">
-        <Link href="/contas" className={key === 'casal' ? 'on' : ''}>Casal</Link>
         <Link href="/contas?e=pessoal" className={key === 'pessoal' ? 'on' : ''}>{firstName}</Link>
+        <Link href="/contas" className={key === 'casal' ? 'on' : ''}>Família</Link>
       </nav>
 
       <section className="card" aria-label="Resumo">

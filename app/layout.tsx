@@ -27,7 +27,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className={`${serif.variable} ${sans.variable}`}>
-      <body>{children}</body>
+      <body>
+        <div className="statusbar" aria-hidden="true" />
+        {children}
+      </body>
     </html>
   );
 }

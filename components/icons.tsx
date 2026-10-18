@@ -44,3 +44,24 @@ export const IconSend = ({ size = 20 }: P) => (
 export const IconCheck = ({ size = 16 }: P) => (
   <svg {...base(size)} strokeWidth={3}><path d="M5 12l5 5 9-10" /></svg>
 );
+export const IconArrowDown = ({ size = 18 }: P) => (
+  <svg {...base(size)} strokeWidth={2.2}><path d="M12 5v14M6 13l6 6 6-6" /></svg>
+);
+export const IconArrowUp = ({ size = 18 }: P) => (
+  <svg {...base(size)} strokeWidth={2.2}><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+);
+export const IconMinus = ({ size = 22 }: P) => (
+  <svg {...base(size)} strokeWidth={2.2}><path d="M5 12h14" /></svg>
+);
+export const IconReceipt = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></svg>
+);
+export const IconTarget = ({ size = 22 }: P) => (
+  <svg {...base(size)}><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="0.8" /></svg>
+);
+export const IconChevron = ({ size = 18 }: P) => (
+  <svg {...base(size)} strokeWidth={2}><path d="M9 6l6 6-6 6" /></svg>
+);
+export const IconList = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M8 6h12M8 12h12M8 18h12" /><circle cx="4" cy="6" r="0.8" /><circle cx="4" cy="12" r="0.8" /><circle cx="4" cy="18" r="0.8" /></svg>
+);

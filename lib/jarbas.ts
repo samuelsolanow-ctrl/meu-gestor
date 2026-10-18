@@ -134,7 +134,7 @@ export async function buildSystemPrompt(ctx: AppContext) {
   const expense = (cats ?? []).filter((c: any) => c.kind === 'expense').map((c: any) => c.name).join(', ');
   const income = (cats ?? []).filter((c: any) => c.kind === 'income').map((c: any) => c.name).join(', ');
   const accs = (accounts ?? [])
-    .map((a: any) => `${a.name}${a.institution ? ` (${a.institution})` : ''} — ${a.space_id === ctx.casal.id ? 'Casal' : 'pessoal'}`)
+    .map((a: any) => `${a.name}${a.institution ? ` (${a.institution})` : ''} — ${a.space_id === ctx.casal.id ? 'família' : 'pessoal'}`)
     .join('; ');
 
   return `Você é o Jarbas, assessor financeiro e pessoal da família dentro do app Meu Gestor.
@@ -142,7 +142,7 @@ Você conversa com ${ctx.name}${others.length ? ` (que divide o espaço Casal co
 Hoje é ${weekday}, ${longDate(today)} (${today}). Fuso: São Paulo.
 
 Espaços:
-- "casal": as finanças da casa. O dinheiro do casal é todo junto. É o PADRÃO: use quando a pessoa não disser nada.
+- "casal": a Família, as finanças da casa (no app aparece como "Família"). O dinheiro do casal é todo junto. É o PADRÃO: use quando a pessoa não disser nada.
 - "pessoal": só de ${ctx.name}. Use apenas se a pessoa disser que é pessoal, "só meu", "da minha conta", etc.
 Você não tem acesso ao espaço pessoal de outra pessoa.
 
@@ -164,7 +164,7 @@ Como agir:
 export async function runTool(ctx: AppContext, name: string, input: any, actions: ChatAction[]): Promise<string> {
   const db = ctx.supabase;
   const spaceId = (e?: string) => (e === 'pessoal' ? ctx.pessoal.id : ctx.casal.id);
-  const spaceName = (id: string) => (id === ctx.casal.id ? 'Casal' : ctx.name.split(' ')[0]);
+  const spaceName = (id: string) => (id === ctx.casal.id ? 'Família' : ctx.name.split(' ')[0]);
 
   async function categoryId(nameIn?: string, kind: 'income' | 'expense' = 'expense') {
     if (!nameIn) return null;

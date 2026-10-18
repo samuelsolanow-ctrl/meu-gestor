@@ -49,7 +49,7 @@ export default function BemVindoPage() {
         <div className="brand"><span className="brand-mark"><IconLogo /></span>Meu Gestor</div>
         <h1 className="hero-title">Família criada!</h1>
         <div className="card stack">
-          <p className="label">Código de convite para a Laís (ou quem for dividir o Casal com você):</p>
+          <p className="label">Código de convite para a Laís (ou quem for dividir a Família com você):</p>
           <p className="code">{createdCode}</p>
           <p className="small muted">Ela cria a conta dela, escolhe “Entrar com código” e digita esse código. Você também encontra o código depois em Mais.</p>
         </div>

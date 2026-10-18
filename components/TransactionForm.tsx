@@ -13,6 +13,7 @@ export default function TransactionForm({
   today,
   casalId,
   pessoalId,
+  defaultTipo = 'despesa',
 }: {
   categories: Option[];
   accounts: Option[];
@@ -21,9 +22,10 @@ export default function TransactionForm({
   today: string;
   casalId: string;
   pessoalId: string;
+  defaultTipo?: 'despesa' | 'receita';
 }) {
   const [state, action, pending] = useActionState(createTransactionAction, { error: '' } as any);
-  const [tipo, setTipo] = useState<'despesa' | 'receita'>('despesa');
+  const [tipo, setTipo] = useState<'despesa' | 'receita'>(defaultTipo);
   const [espaco, setEspaco] = useState(defaultSpace);
   const cats = categories.filter((c) => c.kind === (tipo === 'receita' ? 'income' : 'expense'));
   const spaceId = espaco === 'pessoal' ? pessoalId : casalId;
@@ -61,10 +63,10 @@ export default function TransactionForm({
       <div className="field">
         <span>De quem é</span>
         <div className="seg" role="radiogroup" aria-label="Espaço">
-          <input type="radio" id="e-casal" name="espaco" value="casal" checked={espaco === 'casal'} onChange={() => setEspaco('casal')} />
-          <label htmlFor="e-casal">Casal</label>
           <input type="radio" id="e-pess" name="espaco" value="pessoal" checked={espaco === 'pessoal'} onChange={() => setEspaco('pessoal')} />
           <label htmlFor="e-pess">{myName}</label>
+          <input type="radio" id="e-casal" name="espaco" value="casal" checked={espaco === 'casal'} onChange={() => setEspaco('casal')} />
+          <label htmlFor="e-casal">Família</label>
         </div>
       </div>
 

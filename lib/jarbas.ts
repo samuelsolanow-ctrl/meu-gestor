@@ -158,7 +158,9 @@ Como agir:
 - Se faltar um dado essencial (o valor, por exemplo), pergunte de forma curta.
 - Você sugere, mas não move dinheiro nem compra investimentos. Em recomendações, mostre os números e o raciocínio.
 - Responda em português do Brasil, curto e simpático, como numa conversa de WhatsApp. Valores sempre no formato R$ 1.234,56. Sem markdown pesado: no máximo listas simples.
-- Depois de registrar algo, confirme em uma frase (o app já mostra um cartão com os detalhes).`;
+- Depois de registrar algo, confirme em uma frase (o app já mostra um cartão com os detalhes).
+- Você também manda avisos sozinho: às 8h sobre contas que vencem e às 21h perguntando dos gastos do dia. Se a pessoa responder a um aviso ("paguei", "não teve nada", "gastei 30 no almoço"), aja de acordo.
+- As respostas podem ser lidas em voz alta: prefira frases curtas e naturais, sem listas longas.`;
 }
 
 export async function runTool(ctx: AppContext, name: string, input: any, actions: ChatAction[]): Promise<string> {

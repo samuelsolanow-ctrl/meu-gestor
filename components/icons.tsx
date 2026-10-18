@@ -65,3 +65,18 @@ export const IconChevron = ({ size = 18 }: P) => (
 export const IconList = ({ size = 22 }: P) => (
   <svg {...base(size)}><path d="M8 6h12M8 12h12M8 18h12" /><circle cx="4" cy="6" r="0.8" /><circle cx="4" cy="12" r="0.8" /><circle cx="4" cy="18" r="0.8" /></svg>
 );
+export const IconMic = ({ size = 20 }: P) => (
+  <svg {...base(size)} strokeWidth={2}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+);
+export const IconStop = ({ size = 18 }: P) => (
+  <svg {...base(size)} strokeWidth={2}><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+);
+export const IconSpeaker = ({ size = 20 }: P) => (
+  <svg {...base(size)}><path d="M11 5L6 9H3v6h3l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" /></svg>
+);
+export const IconSpeakerOff = ({ size = 20 }: P) => (
+  <svg {...base(size)}><path d="M11 5L6 9H3v6h3l5 4z" /><path d="M16 9l5 6M21 9l-5 6" /></svg>
+);
+export const IconBell = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>
+);

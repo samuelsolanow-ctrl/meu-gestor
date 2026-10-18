@@ -2,6 +2,7 @@ import { getContext } from '@/lib/context';
 import { brl } from '@/lib/format';
 import { createAccountAction, createGoalAction, signOutAction } from '../actions';
 import FaceIdToggle from '@/components/FaceIdToggle';
+import NotificationsToggle from '@/components/NotificationsToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -124,6 +125,8 @@ export default async function MaisPage() {
           </form>
         </details>
       </section>
+
+      <NotificationsToggle />
 
       <FaceIdToggle userName={ctx.name} />
 

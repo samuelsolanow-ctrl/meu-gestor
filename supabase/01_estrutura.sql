@@ -184,6 +184,12 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- Cria o perfil de quem já tinha se cadastrado antes deste script
+insert into public.profiles (id, display_name)
+select u.id, coalesce(nullif(u.raw_user_meta_data->>'name', ''), split_part(u.email, '@', 1))
+from auth.users u
+on conflict (id) do nothing;
+
 -- Categorias iniciais de uma família nova
 create or replace function public.seed_categories(fid uuid)
 returns void
@@ -226,8 +232,10 @@ begin
   code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6));
   insert into public.families (name, invite_code) values (family_name, code) returning id into fid;
 
-  update public.profiles set family_id = fid, display_name = coalesce(nullif(my_name, ''), display_name)
-  where id = auth.uid();
+  insert into public.profiles (id, display_name, family_id)
+  values (auth.uid(), coalesce(nullif(my_name, ''), 'Eu'), fid)
+  on conflict (id) do update
+    set family_id = fid, display_name = coalesce(nullif(my_name, ''), public.profiles.display_name);
 
   insert into public.spaces (family_id, kind, name) values (fid, 'shared', 'Casal');
   insert into public.spaces (family_id, kind, owner_id, name)
@@ -258,8 +266,10 @@ begin
     raise exception 'Código de convite inválido';
   end if;
 
-  update public.profiles set family_id = fid, display_name = coalesce(nullif(my_name, ''), display_name)
-  where id = auth.uid();
+  insert into public.profiles (id, display_name, family_id)
+  values (auth.uid(), coalesce(nullif(my_name, ''), 'Eu'), fid)
+  on conflict (id) do update
+    set family_id = fid, display_name = coalesce(nullif(my_name, ''), public.profiles.display_name);
 
   insert into public.spaces (family_id, kind, owner_id, name)
   values (fid, 'personal', auth.uid(), coalesce(nullif(my_name, ''), 'Pessoal'));
@@ -348,5 +358,8 @@ drop policy if exists push_own on public.push_subscriptions;
 create policy push_own on public.push_subscriptions
   for all to authenticated
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- Avisa o Supabase para recarregar as funções novas
+notify pgrst, 'reload schema';
 
 -- Pronto! Se apareceu "Success. No rows returned", deu tudo certo.

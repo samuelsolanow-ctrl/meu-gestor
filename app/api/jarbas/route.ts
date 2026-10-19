@@ -7,7 +7,7 @@ import { ensureSchema } from '@/lib/migrate';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
-const MODEL = process.env.JARBAS_MODEL || 'claude-haiku-5-5';
+const MODEL = process.env.JARBAS_MODEL || 'claude-sonnet-5-5';
 const MAX_STEPS = 6;
 
 // Tools com cache: a parte fixa (ferramentas + instruções) é reaproveitada entre mensagens
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 
   // Tudo em paralelo: histórico, contexto do Jarbas e salvar a mensagem
   const [{ data: history }, system] = await Promise.all([
-    db.from('chat_messages').select('role, content').eq('user_id', ctx.userId).order('created_at', { ascending: false }).limit(12),
+    db.from('chat_messages').select('role, content').eq('user_id', ctx.userId).order('created_at', { ascending: false }).limit(20),
     buildSystem(ctx),
     db.from('chat_messages').insert({ space_id: ctx.casal.id, user_id: ctx.userId, role: 'user', content: text }),
   ]);
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
           let stepText = '';
           const s: any = anthropic.messages.stream({
             model: MODEL,
-            max_tokens: 700,
+            max_tokens: 1000,
             system: system as any,
             tools: TOOLS_CACHED as any,
             messages,

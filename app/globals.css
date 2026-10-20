@@ -291,3 +291,12 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
 .voice-opt { width: 100%; background: none; border: none; border-top: 1px solid var(--surface-2); color: var(--text); cursor: pointer; padding: 12px 0; }
 .list > .voice-opt:first-child { border-top: none; }
 .voice-opt.on .item-icon { background: var(--accent-soft); color: var(--accent); }
+
+/* anexos no chat */
+.attach-row { display: flex; gap: 8px; overflow-x: auto; }
+.attach-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 6px 6px 8px; border-radius: 12px; background: var(--surface-2); font-size: 13px; max-width: 220px; flex: none; }
+.attach-chip img { width: 32px; height: 32px; object-fit: cover; border-radius: 8px; }
+.attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attach-chip button { border: none; background: none; color: var(--muted); padding: 4px; display: inline-flex; }
+.thumbs { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.thumbs img { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; }

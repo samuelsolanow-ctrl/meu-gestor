@@ -20,7 +20,12 @@ export async function POST(req: Request) {
 
   const ctx = await getContext();
   const body = await req.json().catch(() => ({}));
-  const text = String(body?.message ?? '').trim().slice(0, 2000);
+  const files: { kind: 'image' | 'pdf'; media_type: string; data: string; name: string }[] = (Array.isArray(body?.files) ? body.files : [])
+    .slice(0, 3)
+    .filter((f: any) => typeof f?.data === 'string' && /^(image\/(jpeg|png|webp|gif)|application\/pdf)$/.test(f?.media_type));
+  const typed = String(body?.message ?? '').trim().slice(0, 2000);
+  const text = typed || (files.length ? 'Veja o anexo.' : '');
+  const attachNote = files.length ? `[Anexo: ${files.map((f) => f.name || (f.kind === 'pdf' ? 'PDF' : 'foto')).join(', ')}] ` : '';
   if (!text) return NextResponse.json({ error: 'Mensagem vazia.' }, { status: 400 });
   const db = ctx.supabase;
 
@@ -30,7 +35,7 @@ export async function POST(req: Request) {
   const [{ data: history }, system] = await Promise.all([
     db.from('chat_messages').select('role, content').eq('user_id', ctx.userId).order('created_at', { ascending: false }).limit(20),
     buildSystem(ctx),
-    db.from('chat_messages').insert({ space_id: ctx.casal.id, user_id: ctx.userId, role: 'user', content: text }),
+    db.from('chat_messages').insert({ space_id: ctx.casal.id, user_id: ctx.userId, role: 'user', content: attachNote + text }),
   ]);
 
   const messages: any[] = [];
@@ -47,6 +52,17 @@ export async function POST(req: Request) {
     else messages.push({ role: 'user', content: text });
   }
 
+  // Anexos (foto/PDF) vão só na mensagem atual
+  if (files.length) {
+    const blocks: any[] = files.map((f) =>
+      f.media_type === 'application/pdf'
+        ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } }
+        : { type: 'image', source: { type: 'base64', media_type: f.media_type, data: f.data } },
+    );
+    const cur = messages[messages.length - 1];
+    cur.content = [...blocks, { type: 'text', text: cur.content }];
+  }
+
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
 
@@ -60,7 +76,7 @@ export async function POST(req: Request) {
           let stepText = '';
           const s: any = anthropic.messages.stream({
             model: MODEL,
-            max_tokens: 1000,
+            max_tokens: 800,
             system: system as any,
             tools: TOOLS_CACHED as any,
             messages,

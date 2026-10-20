@@ -47,7 +47,7 @@ export default function JarbasBar({ tip }: { tip: string }) {
     recRef.current = rec;
     rec.lang = 'pt-BR';
     rec.interimResults = true;
-    rec.continuous = false;
+    rec.continuous = true;
     let heard = '';
     let silence: any = null;
     const arm = () => {
@@ -56,7 +56,7 @@ export default function JarbasBar({ tip }: { tip: string }) {
         try {
           rec.stop();
         } catch {}
-      }, 900);
+      }, 2500);
     };
     rec.onresult = (e: any) => {
       arm();

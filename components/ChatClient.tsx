@@ -2,16 +2,48 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { IconCheck, IconMic, IconSend, IconSpeaker, IconSpeakerOff, IconStop } from './icons';
+import { IconCheck, IconClip, IconMic, IconSend, IconSpeaker, IconSpeakerOff, IconStop, IconX } from './icons';
 import { say, stopVoice, unlockAudio } from '@/lib/voice';
 
 type Action = { kind: string; title: string; sub: string; amount?: number; income?: boolean };
-type Msg = { id: string; role: 'user' | 'assistant' | 'action'; content: string; action?: Action };
+type Msg = { id: string; role: 'user' | 'assistant' | 'action'; content: string; action?: Action; thumbs?: string[] };
 
 const brl = (n?: number) => (n == null ? '' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n));
 
 const SUGGESTIONS = ['Resumo do mês', 'Contas desta semana', 'Quanto gastamos com mercado?', 'Gastei 50 na farmácia'];
 const VOICE_KEY = 'mg-voz';
+const SILENCE_MS = 2500; // 2,5 s calado = terminou de falar (ou toque no botão para enviar já)
+
+type Attach = { kind: 'image' | 'pdf'; media_type: string; data: string; name: string; preview?: string };
+
+// Foto: reduz para no máx. 1600 px (fica leve e rápido). PDF: vai como está (até 3 MB).
+async function readAttachment(file: File): Promise<Attach> {
+  if (file.type === 'application/pdf') {
+    if (file.size > 3 * 1024 * 1024) throw new Error('PDF muito grande (máx. 3 MB).');
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    return { kind: 'pdf', media_type: 'application/pdf', data: btoa(bin), name: file.name || 'documento.pdf' };
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, bad) => {
+      const i = new Image();
+      i.onload = () => ok(i);
+      i.onerror = () => bad(new Error('Não consegui abrir a foto.'));
+      i.src = url;
+    });
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale);
+    c.height = Math.round(img.naturalHeight * scale);
+    c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL('image/jpeg', 0.85);
+    return { kind: 'image', media_type: 'image/jpeg', data: dataUrl.split(',')[1], name: file.name || 'foto.jpg', preview: dataUrl };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 
 // ---------- Voz (tudo pelo próprio iPhone, sem custo) ----------
 // Uma única "escuta" para o app inteiro: o iPhone pede o microfone uma vez por uso, não a cada áudio
@@ -39,6 +71,8 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
   const [listening, setListening] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const [hint, setHint] = useState('');
+  const [attach, setAttach] = useState<Attach[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const recRef = useRef<any>(null);
   const voiceOnRef = useRef(false);
@@ -84,16 +118,32 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
     setTimeout(() => setHint(''), 2500);
   }
 
+  async function pickFiles(list: FileList | null) {
+    if (!list?.length) return;
+    try {
+      const got = await Promise.all(Array.from(list).slice(0, 3).map(readAttachment));
+      setAttach((a) => [...a, ...got].slice(0, 3));
+    } catch (e: any) {
+      setHint(e?.message ?? 'Não consegui ler o arquivo.');
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
   async function send(raw: string) {
     const message = raw.trim();
-    if (!message || busy) return;
+    const files = attach;
+    if ((!message && !files.length) || busy) return;
+    setAttach([]);
     stopVoice();
     if (voiceOnRef.current) unlockSpeech();
     setText('');
     setHint('');
     setBusy(true);
     const botId = `b${Date.now()}`;
-    setMsgs((m) => [...m, { id: `u${Date.now()}`, role: 'user', content: message }, { id: botId, role: 'assistant', content: '' }]);
+    const label = message || (files.length ? 'Veja o anexo.' : '');
+    const thumbs = files.map((f) => f.preview ?? '');
+    const fileNote = files.filter((f) => f.kind === 'pdf').map((f) => `📄 ${f.name}`).join('\n');
+    setMsgs((m) => [...m, { id: `u${Date.now()}`, role: 'user', content: [fileNote, label].filter(Boolean).join('\n'), thumbs }, { id: botId, role: 'assistant', content: '' }]);
 
     let full = '';
     let spoken = 0;
@@ -118,7 +168,7 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
       const res = await fetch('/api/jarbas', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ message, files: files.map(({ preview, ...f }) => f) }),
       });
       if (!res.ok || !res.body || !(res.headers.get('content-type') || '').includes('ndjson')) {
         const data = await res.json().catch(() => ({}));
@@ -184,7 +234,7 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
     recRef.current = rec;
     rec.lang = 'pt-BR';
     rec.interimResults = true;
-    rec.continuous = false;
+    rec.continuous = true; // não para sozinho nas pausas
     let finalText = '';
     let lastHeard = '';
     let silence: any = null;
@@ -194,7 +244,7 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
         try {
           rec.stop();
         } catch {}
-      }, 900); // 0,9 s de silêncio = terminou de falar
+      }, SILENCE_MS);
     };
     rec.onresult = (e: any) => {
       armSilence();
@@ -225,13 +275,13 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
     try {
       rec.start();
       setListening(true);
-      setHint('Pode falar…');
+      setHint('Pode falar… toque no quadrado para enviar.');
     } catch {
       setHint('Não consegui ligar o microfone. Use o microfone do teclado.');
     }
   }
 
-  const showMic = !text.trim() || listening;
+  const showMic = (!text.trim() && !attach.length) || listening;
 
   return (
     <>
@@ -258,7 +308,12 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
               )}
             </div>
           ) : m.role === 'user' ? (
-            <div key={m.id} className="bubble user">{m.content}</div>
+            <div key={m.id} className="bubble user">
+              {m.thumbs?.some(Boolean) && (
+                <div className="thumbs">{m.thumbs.filter(Boolean).map((t, i) => <img key={i} src={t} alt="Foto anexada" />)}</div>
+              )}
+              {m.content}
+            </div>
           ) : !m.content ? null : (
             <div key={m.id} className="bubble bot">
               {m.content}
@@ -283,6 +338,18 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
               ))}
             </div>
           )}
+          {attach.length > 0 && (
+            <div className="attach-row">
+              {attach.map((f, i) => (
+                <span className="attach-chip" key={i}>
+                  {f.preview ? <img src={f.preview} alt="" /> : <span aria-hidden="true">📄</span>}
+                  <span className="attach-name">{f.name}</span>
+                  <button type="button" aria-label={`Remover ${f.name}`} onClick={() => setAttach((a) => a.filter((_, j) => j !== i))}><IconX /></button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*,application/pdf" multiple hidden onChange={(e) => pickFiles(e.target.files)} />
           <form
             className="row"
             style={{ gap: 8 }}
@@ -299,6 +366,9 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
               aria-label={voiceOn ? 'Desligar respostas em voz' : 'Ligar respostas em voz'}
             >
               {voiceOn ? <IconSpeaker /> : <IconSpeakerOff />}
+            </button>
+            <button type="button" className="btn btn-icon voice-toggle" onClick={() => fileRef.current?.click()} aria-label="Anexar foto ou PDF" disabled={busy}>
+              <IconClip />
             </button>
             <label htmlFor="msg" className="sr-only">Mensagem para o Jarbas</label>
             <input

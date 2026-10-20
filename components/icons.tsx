@@ -83,3 +83,9 @@ export const IconBell = ({ size = 22 }: P) => (
 export const IconCalendar = ({ size = 22 }: P) => (
   <svg {...base(size)}><rect x="3" y="4" width="18" height="17" rx="3" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>
 );
+export const IconClip = ({ size = 20 }: P) => (
+  <svg {...base(size)}><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9" /></svg>
+);
+export const IconX = ({ size = 14 }: P) => (
+  <svg {...base(size)} strokeWidth={2.2}><path d="M6 6l12 12M18 6L6 18" /></svg>
+);

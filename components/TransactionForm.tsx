@@ -2,8 +2,9 @@
 
 import { useActionState, useState } from 'react';
 import { createTransactionAction } from '@/app/(app)/actions';
+import { brl, parseMoney } from '@/lib/format';
 
-type Option = { id: string; name: string; kind?: string; space_id?: string };
+type Option = { id: string; name: string; kind?: string; space_id?: string; type?: string };
 
 export default function TransactionForm({
   categories,
@@ -14,6 +15,8 @@ export default function TransactionForm({
   casalId,
   pessoalId,
   defaultTipo = 'despesa',
+  defaultAccount = '',
+  backTo,
 }: {
   categories: Option[];
   accounts: Option[];
@@ -23,13 +26,20 @@ export default function TransactionForm({
   casalId: string;
   pessoalId: string;
   defaultTipo?: 'despesa' | 'receita';
+  defaultAccount?: string;
+  backTo?: 'cartoes';
 }) {
   const [state, action, pending] = useActionState(createTransactionAction, { error: '' } as any);
   const [tipo, setTipo] = useState<'despesa' | 'receita'>(defaultTipo);
   const [espaco, setEspaco] = useState(defaultSpace);
   const cats = categories.filter((c) => c.kind === (tipo === 'receita' ? 'income' : 'expense'));
   const spaceId = espaco === 'pessoal' ? pessoalId : casalId;
-  const accs = accounts.filter((a) => a.space_id === spaceId);
+  const accs = accounts.filter((a) => a.space_id === spaceId || a.id === defaultAccount);
+  const [valor, setValor] = useState('');
+  const [parcelas, setParcelas] = useState(1);
+  const [conta, setConta] = useState(defaultAccount);
+  const total = parseMoney(valor);
+  const isCard = accounts.find((a) => a.id === conta)?.type === 'credit_card';
 
   return (
     <form action={action} className="stack">
@@ -41,9 +51,27 @@ export default function TransactionForm({
       </div>
 
       <label className="field">
-        <span>Valor (R$)</span>
-        <input className="input money-input" name="valor" inputMode="decimal" placeholder="0,00" required autoFocus />
+        <span>{parcelas > 1 ? 'Valor total da compra (R$)' : 'Valor (R$)'}</span>
+        <input className="input money-input" name="valor" inputMode="decimal" placeholder="0,00" required autoFocus value={valor} onChange={(e) => setValor(e.target.value)} />
       </label>
+
+      {tipo === 'despesa' && (
+        <label className="field">
+          <span>Parcelas</span>
+          <select className="input" name="parcelas" value={parcelas} onChange={(e) => setParcelas(Number(e.target.value))}>
+            <option value={1}>À vista</option>
+            {Array.from({ length: 23 }, (_, i) => i + 2).map((n) => (
+              <option key={n} value={n}>{n}x{total > 0 ? ` de ${brl(Math.floor((total * 100) / n) / 100)}` : ''}</option>
+            ))}
+          </select>
+          {parcelas > 1 && (
+            <span className="tiny muted" style={{ fontWeight: 400 }}>
+              Entra uma parcela por mês{isCard ? ', cada uma na fatura certa do cartão' : ''}. No mês conta só a parcela, não o total.
+            </span>
+          )}
+        </label>
+      )}
+      {backTo && <input type="hidden" name="voltar" value={backTo} />}
 
       <label className="field">
         <span>Descrição</span>
@@ -77,7 +105,7 @@ export default function TransactionForm({
         </label>
         <label className="field">
           <span>Conta ou cartão</span>
-          <select className="input" name="conta" defaultValue="">
+          <select className="input" name="conta" value={conta} onChange={(e) => setConta(e.target.value)}>
             <option value="">Não informar</option>
             {accs.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>

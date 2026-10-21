@@ -3,12 +3,13 @@ import { addBill, addTransaction, monthSummary, payBill } from '@/lib/finance';
 import { brl, longDate, todaySP } from '@/lib/format';
 import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
 import { ensureSchema } from '@/lib/migrate';
+import { invoiceToPay, loadCardData, type Card } from '@/lib/cards';
 
 /** Ação mostrada como cartão no chat */
 export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
 
 /** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
-export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso']);
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -22,7 +23,8 @@ export const TOOLS = [
       type: 'object',
       properties: {
         tipo: { type: 'string', enum: ['despesa', 'receita'] },
-        valor: { type: 'number', description: 'Valor em reais, positivo. Ex.: 85.5' },
+        valor: { type: 'number', description: 'Valor TOTAL em reais, positivo. Compra parcelada: o total ("10x de 410" → 4100).' },
+        parcelas: { type: 'integer', description: 'Número de parcelas se for compra parcelada (ex.: 10). Omita se for à vista.' },
         descricao: { type: 'string', description: 'Descrição curta, ex.: "Mercado", "Farmácia"' },
         categoria: { type: 'string', description: 'Nome exato de uma das categorias da família' },
         espaco: { type: 'string', enum: ['casal', 'pessoal'] },
@@ -91,8 +93,23 @@ export const TOOLS = [
     },
   },
   {
+    name: 'parcelar_lancamento',
+    description: 'Transforma um lançamento já feito à vista em compra parcelada (ex.: lançou 4100 mas foi em 10x). Mantém data, cartão e categoria.',
+    input_schema: { type: 'object', properties: { lancamento_id: { type: 'string' }, parcelas: { type: 'integer' } }, required: ['lancamento_id', 'parcelas'] },
+  },
+  {
+    name: 'ver_cartoes',
+    description: 'Mostra os cartões de crédito: fatura atual (total, fechamento, vencimento, status), próximas faturas, limite usado e disponível.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'pagar_fatura',
+    description: 'Marca a fatura do cartão como paga. NÃO lança despesa nova (as compras já estão lançadas).',
+    input_schema: { type: 'object', properties: { cartao: { type: 'string', description: 'Nome do cartão' }, fatura: { type: 'string', description: 'AAAA-MM da fatura; omita para a fatura da vez' } }, required: ['cartao'] },
+  },
+  {
     name: 'apagar_lancamento',
-    description: 'Apaga um lançamento (por exemplo quando a pessoa pede para desfazer). Use o id de listar_lancamentos ou de um registro feito agora.',
+    description: 'Apaga um lançamento (por exemplo quando a pessoa pede para desfazer). Se for parcelado, apaga todas as parcelas. Use o id de listar_lancamentos ou de um registro feito agora.',
     input_schema: { type: 'object', properties: { lancamento_id: { type: 'string' } }, required: ['lancamento_id'] },
   },
   {
@@ -168,6 +185,7 @@ Como agir:
 - Seja rápido e proativo. Faça na hora, sem pedir confirmação para coisas óbvias.
 - IMPORTANTE para ser rápido: quando for gravar algo (lançar, agendar, pagar, criar), escreva PRIMEIRO a confirmação curta para a pessoa e, no mesmo turno, chame a(s) ferramenta(s). Ex.: "Anotado: R$ 85,00 de mercado na Família." + registrar_lancamento.
 - Gasto ou receita contado → registrar_lancamento com a categoria mais adequada da lista.
+- Cartão de crédito: compra parcelada ("10x", "em 10 vezes", "parcelei") → registrar_lancamento com valor TOTAL e parcelas; o app cria uma parcela por fatura. Se a pessoa disser só o valor da parcela ("10 de 410"), multiplique. Se disser que um lançamento já feito foi parcelado, use parcelar_lancamento. Pagar a fatura do cartão → pagar_fatura (nunca registre a fatura como despesa, senão conta em dobro). Perguntas sobre fatura, limite ou cartão → ver_cartoes.
 - Compromissos, lembretes e "me lembra" → agendar. Converta datas e horas relativas ("amanhã às 8", "sexta 15h", "daqui 2 horas") para AAAA-MM-DDTHH:MM com base no momento atual. "Me lembra 1 hora antes" → lembrar_minutos_antes = 60. Se a pessoa não disser quando avisar, compromisso avisa 30 minutos antes e lembrete avisa na hora (0).
 - Conta a pagar num horário ("amanhã tenho que pagar a conta às 10") → agende o lembrete; se houver valor, cadastre também com criar_conta_a_pagar.
 - Se perceber conflito com algo já na agenda, avise numa frase.
@@ -252,15 +270,19 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
         accountId: await accountId(input.conta),
         occurredOn: input.data,
         source: 'chat',
+        installments: Number(input.parcelas) || 1,
       });
+      const parc = (tx as any).installments as number | undefined;
       actions.push({
         kind: 'transaction',
         title: tx.description,
-        sub: `${tx.categories?.name ?? 'Sem categoria'} · ${spaceName(spaceId(input.espaco))} · ${longDate(tx.occurred_on)}`,
-        amount: Number(tx.amount),
+        sub: parc
+          ? `${parc}x de ${brl((tx as any).installment_amount)} · ${spaceName(spaceId(input.espaco))} · 1ª em ${longDate(tx.occurred_on)}`
+          : `${tx.categories?.name ?? 'Sem categoria'} · ${spaceName(spaceId(input.espaco))} · ${longDate(tx.occurred_on)}`,
+        amount: parc ? Number((tx as any).total) : Number(tx.amount),
         income: kind === 'income',
       });
-      return JSON.stringify({ ok: true, lancamento_id: tx.id, categoria: tx.categories?.name ?? null });
+      return JSON.stringify({ ok: true, lancamento_id: tx.id, categoria: tx.categories?.name ?? null, ...(parc ? { parcelas: parc, valor_parcela: (tx as any).installment_amount } : {}) });
     }
     case 'criar_conta_a_pagar': {
       const rec = input.recorrencia === 'mensal' ? 'monthly' : input.recorrencia === 'anual' ? 'yearly' : 'none';
@@ -310,7 +332,7 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
     case 'listar_lancamentos': {
       let q = db
         .from('transactions')
-        .select('id, kind, amount, description, occurred_on, categories(name)')
+        .select('id, kind, amount, description, occurred_on, installment_no, installment_total, categories(name), accounts(name)')
         .eq('space_id', spaceId(input.espaco))
         .gte('occurred_on', input.de)
         .lte('occurred_on', input.ate)
@@ -320,15 +342,70 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       const { data, error } = await q;
       if (error) throw new Error(error.message);
       return JSON.stringify(
-        (data ?? []).map((t: any) => ({ id: t.id, tipo: t.kind === 'income' ? 'receita' : 'despesa', valor: Number(t.amount), descricao: t.description, data: t.occurred_on, categoria: t.categories?.name ?? null })),
+        (data ?? []).map((t: any) => ({ id: t.id, tipo: t.kind === 'income' ? 'receita' : 'despesa', valor: Number(t.amount), descricao: t.description, data: t.occurred_on, categoria: t.categories?.name ?? null, conta: t.accounts?.name ?? null, ...(t.installment_total ? { parcela: `${t.installment_no}/${t.installment_total}` } : {}) })),
       );
     }
     case 'apagar_lancamento': {
-      const { data, error } = await db.from('transactions').delete().eq('id', String(input.lancamento_id)).select('description, amount').maybeSingle();
+      await ensureSchema();
+      const { data: found } = await db.from('transactions').select('id, installment_group').eq('id', String(input.lancamento_id)).maybeSingle();
+      if (!found) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
+      const q = db.from('transactions').delete();
+      const { data, error } = await (found.installment_group ? q.eq('installment_group', found.installment_group) : q.eq('id', found.id)).select('description, amount');
       if (error) throw new Error(error.message);
-      if (!data) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
-      actions.push({ kind: 'deleted', title: `${data.description} apagado`, sub: 'Lançamento desfeito', amount: Number(data.amount) });
-      return JSON.stringify({ ok: true });
+      const total = (data ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+      actions.push({ kind: 'deleted', title: `${data?.[0]?.description ?? 'Lançamento'} apagado`, sub: (data?.length ?? 0) > 1 ? `${data!.length} parcelas desfeitas` : 'Lançamento desfeito', amount: Math.round(total * 100) / 100 });
+      return JSON.stringify({ ok: true, apagados: data?.length ?? 0 });
+    }
+    case 'parcelar_lancamento': {
+      const n = Math.floor(Number(input.parcelas));
+      if (!(n > 1)) return JSON.stringify({ ok: false, erro: 'Número de parcelas inválido' });
+      const { data: t } = await db.from('transactions').select('*').eq('id', String(input.lancamento_id)).maybeSingle();
+      if (!t) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
+      if (t.installment_total) return JSON.stringify({ ok: false, erro: 'Esse lançamento já é parcelado' });
+      const tx: any = await addTransaction(db, {
+        spaceId: t.space_id, kind: t.kind, amount: Number(t.amount), description: t.description,
+        categoryId: t.category_id, accountId: t.account_id, occurredOn: t.occurred_on, source: 'chat', installments: n,
+      });
+      await db.from('transactions').delete().eq('id', t.id);
+      actions.push({ kind: 'transaction', title: t.description, sub: `Agora em ${n}x de ${brl(tx.installment_amount)}`, amount: Number(t.amount) });
+      return JSON.stringify({ ok: true, parcelas: n, valor_parcela: tx.installment_amount });
+    }
+    case 'ver_cartoes':
+    case 'pagar_fatura': {
+      await ensureSchema();
+      const { data: cards } = await db.from('accounts').select('id, name, institution, space_id, closing_day, due_day, credit_limit').eq('type', 'credit_card').eq('archived', false);
+      if (!cards?.length) return JSON.stringify({ ok: false, erro: 'Nenhum cartão cadastrado. Cadastre na aba Cartões.' });
+      const data = await loadCardData(db, cards as Card[]);
+      if (name === 'ver_cartoes') {
+        return JSON.stringify(
+          (cards as Card[]).map((c) => {
+            const d = data.get(c.id)!;
+            const invs = [...d.invoices.values()].sort((a, b) => (a.key < b.key ? -1 : 1));
+            const cur = d.invoices.get(d.current)!;
+            const pay = invoiceToPay(d.invoices, d.current);
+            return {
+              cartao: c.name,
+              de_quem: spaceName(c.space_id),
+              fatura_atual: { mes: cur.key, total: cur.total, fecha: cur.closesOn, vence: cur.dueOn, status: cur.status },
+              fatura_para_pagar: pay.key !== cur.key ? { mes: pay.key, total: pay.total, vence: pay.dueOn, status: pay.status } : null,
+              proximas: invs.filter((i) => i.key > d.current).slice(0, 6).map((i) => ({ mes: i.key, total: i.total })),
+              limite: c.credit_limit ? Number(c.credit_limit) : null,
+              usado: d.used,
+              disponivel: c.credit_limit ? Math.round((Number(c.credit_limit) - d.used) * 100) / 100 : null,
+            };
+          }),
+        );
+      }
+      const nm = norm(String(input.cartao ?? ''));
+      const card = (cards as Card[]).find((c) => norm(c.name) === nm) ?? (cards as Card[]).find((c) => norm(c.name).includes(nm) || nm.includes(norm(c.name)) || (c.institution && nm.includes(norm(c.institution))));
+      if (!card) return JSON.stringify({ ok: false, erro: 'Cartão não encontrado', cartoes: cards.map((c: any) => c.name) });
+      const d = data.get(card.id)!;
+      const inv = input.fatura ? d.invoices.get(String(input.fatura)) : invoiceToPay(d.invoices, d.current);
+      if (!inv) return JSON.stringify({ ok: false, erro: 'Fatura não encontrada' });
+      const { error } = await db.from('card_invoices').upsert({ account_id: card.id, invoice_key: inv.key });
+      if (error) throw new Error(error.message);
+      actions.push({ kind: 'paid', title: `Fatura ${card.name} paga`, sub: `Vencimento ${longDate(inv.dueOn)}`, amount: inv.total });
+      return JSON.stringify({ ok: true, fatura: inv.key, total: inv.total });
     }
     case 'listar_metas': {
       const { data } = await db.from('goals').select('id, name, target_amount, current_amount, deadline, space_id').order('created_at');

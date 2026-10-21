@@ -89,3 +89,6 @@ export const IconClip = ({ size = 20 }: P) => (
 export const IconX = ({ size = 14 }: P) => (
   <svg {...base(size)} strokeWidth={2.2}><path d="M6 6l12 12M18 6L6 18" /></svg>
 );
+export const IconCard = ({ size = 22 }: P) => (
+  <svg {...base(size)}><rect x="2.5" y="5" width="19" height="14" rx="3" /><path d="M2.5 10h19M6.5 15h4" /></svg>
+);

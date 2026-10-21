@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { IconBills, IconChat, IconHome, IconMore, IconPlus } from './icons';
+import { IconBills, IconCard, IconChat, IconHome, IconMore } from './icons';
 
 export default function TabBar() {
   const path = usePathname();
@@ -21,9 +21,9 @@ export default function TabBar() {
         <Link prefetch href="/jarbas" className="tab-main" aria-label="Falar com o Jarbas">
           <IconChat />
         </Link>
-        <Link prefetch href="/lancar" className={`tab ${on('/lancar') ? 'on' : ''}`} aria-current={on('/lancar') ? 'page' : undefined}>
-          <IconPlus />
-          Lançar
+        <Link prefetch href="/cartoes" className={`tab ${on('/cartoes') ? 'on' : ''}`} aria-current={on('/cartoes') ? 'page' : undefined}>
+          <IconCard />
+          Cartões
         </Link>
         <Link prefetch href="/mais" className={`tab ${on('/mais') ? 'on' : ''}`} aria-current={on('/mais') ? 'page' : undefined}>
           <IconMore />

@@ -12,7 +12,7 @@ export default async function LancarPage({ searchParams }: { searchParams: Promi
   const { key } = pickSpace(ctx, e);
   const [{ data: categories }, { data: accounts }] = await Promise.all([
     ctx.supabase.from('categories').select('id, name, kind').order('name'),
-    ctx.supabase.from('accounts').select('id, name, space_id').eq('archived', false).order('name'),
+    ctx.supabase.from('accounts').select('id, name, space_id, type').eq('archived', false).order('name'),
   ]);
 
   return (

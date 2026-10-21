@@ -1,4 +1,5 @@
 import { addMonths, monthRange, todaySP } from '@/lib/format';
+import { ensureSchema } from '@/lib/migrate';
 
 type DB = any; // cliente do Supabase já autenticado (as regras de privacidade valem aqui)
 
@@ -11,10 +12,14 @@ export type NewTransaction = {
   accountId?: string | null;
   occurredOn?: string;
   source?: 'chat' | 'form' | 'import' | 'photo';
+  /** Número de parcelas (compra parcelada). O valor é o TOTAL da compra. */
+  installments?: number;
 };
 
 export async function addTransaction(db: DB, t: NewTransaction) {
   if (!(t.amount > 0)) throw new Error('Valor inválido');
+  const n = Math.floor(Number(t.installments) || 1);
+  if (n > 1) return addInstallments(db, t, Math.min(n, 48));
   const { data, error } = await db
     .from('transactions')
     .insert({
@@ -31,6 +36,36 @@ export async function addTransaction(db: DB, t: NewTransaction) {
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+/** Compra parcelada: cria uma parcela por mês (cada uma cai na fatura certa do cartão). */
+async function addInstallments(db: DB, t: NewTransaction, n: number) {
+  await ensureSchema();
+  const totalCents = Math.round(t.amount * 100);
+  const base = Math.floor(totalCents / n);
+  const first = t.occurredOn || todaySP();
+  const group = crypto.randomUUID();
+  const description = t.description.trim() || 'Compra parcelada';
+  const rows = Array.from({ length: n }, (_, i) => ({
+    space_id: t.spaceId,
+    kind: t.kind,
+    amount: (i === n - 1 ? totalCents - base * (n - 1) : base) / 100,
+    description,
+    category_id: t.categoryId || null,
+    account_id: t.accountId || null,
+    occurred_on: addMonths(first, i),
+    installment_no: i + 1,
+    installment_total: n,
+    installment_group: group,
+    source: t.source ?? 'form',
+  }));
+  const { data, error } = await db
+    .from('transactions')
+    .insert(rows)
+    .select('id, kind, amount, description, occurred_on, installment_no, categories(name)');
+  if (error) throw new Error(error.message);
+  const firstRow = (data ?? []).find((r: any) => r.installment_no === 1) ?? data?.[0];
+  return { ...firstRow, installments: n, installment_amount: base / 100, total: t.amount, group };
 }
 
 export type NewBill = {

@@ -25,6 +25,7 @@ export default async function EditBillPage({ params }: { params: Promise<{ id: s
         <h1 className="page-title">Editar conta</h1>
       </header>
       {bill.status === 'paid' && (
+        <>
         <div className="paid-banner" role="status">
           <IconCheck />
           <span className="grow">Paga{bill.paid_at ? ` em ${longDate(String(bill.paid_at).slice(0, 10))}` : ''} · {brl(bill.amount)}</span>
@@ -35,6 +36,7 @@ export default async function EditBillPage({ params }: { params: Promise<{ id: s
           </form>
         </div>
         <p className="tiny muted" style={{ margin: 0 }}>“Não paguei” volta a conta para em aberto e apaga o gasto lançado no pagamento.</p>
+        </>
       )}
       <EditBillForm bill={bill} categories={categories ?? []} myName={ctx.name.split(' ')[0]} casalId={ctx.casal.id} />
     </main>

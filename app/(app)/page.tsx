@@ -2,10 +2,12 @@ import Link from 'next/link';
 import JarbasBar from '@/components/JarbasBar';
 import { getContext, pickSpace } from '@/lib/context';
 import { monthSummary } from '@/lib/finance';
+import { getBudgets } from '@/lib/budget';
+import { cardColors, invoiceToPay, loadCardData, type Card } from '@/lib/cards';
 import { fmtWhen } from '@/lib/agenda';
 import { brl, daysBetween, dueLabel, monthName, monthRange, shortDate, todaySP } from '@/lib/format';
 import {
-  IconArrowDown, IconArrowUp, IconBills, IconCalendar, IconChat, IconList, IconMinus, IconPlus, IconReceipt, IconTarget,
+  IconBills, IconCalendar, IconChat, IconList, IconMinus, IconPlus, IconTarget, IconPie, IconCard as IconCardSmall,
 } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -20,6 +22,29 @@ function longToday() {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+const DONUT = ['#7aa2ff', '#b69cff', '#5ee0c1', '#ff8a6b', '#3a4870'];
+
+function Donut({ items }: { items: { name: string; total: number }[] }) {
+  const C = 2 * Math.PI * 36;
+  const sum = items.reduce((s, i) => s + i.total, 0) || 1;
+  let off = 0;
+  const label = items.map((i) => `${i.name} ${Math.round((i.total / sum) * 100)}%`).join(', ');
+  return (
+    <svg width="116" height="116" viewBox="0 0 100 100" role="img" aria-label={`Gastos por categoria: ${label}`} style={{ flex: 'none' }}>
+      <circle cx="50" cy="50" r="36" fill="none" stroke="var(--surface-2)" strokeWidth="14" />
+      {items.map((it, i) => {
+        const L = (C * it.total) / sum;
+        const el = (
+          <circle key={it.name} cx="50" cy="50" r="36" fill="none" stroke={DONUT[i % DONUT.length]} strokeWidth="14"
+            strokeDasharray={`${Math.max(0, L - (items.length > 1 ? 1.5 : 0))} ${C}`} strokeDashoffset={-off} transform="rotate(-90 50 50)" />
+        );
+        off += L;
+        return el;
+      })}
+    </svg>
+  );
+}
+
 export default async function PainelPage({ searchParams }: { searchParams: Promise<{ e?: string }> }) {
   const ctx = await getContext();
   const { e } = await searchParams;
@@ -30,19 +55,45 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
   const daysLeft = daysBetween(today, end);
   const q = key === 'pessoal' ? '?e=pessoal' : '';
 
-  const [summary, billsRes, goalsRes, txRes, evRes] = await Promise.all([
+  const { start } = monthRange(today);
+  const [summary, billsRes, goalsRes, txRes, evRes, budgets, cardsRes, monthBillsRes, whoRes, membersRes] = await Promise.all([
     monthSummary(db, space.id, today),
     db.from('bills').select('id, name, amount, due_date').eq('space_id', space.id).eq('status', 'open').order('due_date').limit(4),
     db.from('goals').select('id, name, target_amount, current_amount, deadline').eq('space_id', space.id).order('created_at'),
     db.from('transactions').select('id, kind, amount, description, occurred_on, categories(name)').eq('space_id', space.id).order('occurred_on', { ascending: false }).order('created_at', { ascending: false }).limit(5),
     db.from('events').select('id, kind, title, starts_at, space_id').gte('starts_at', new Date(Date.now() - 3_600_000).toISOString()).order('starts_at').limit(4),
+    getBudgets(db, space.id, today),
+    db.from('accounts').select('id, name, institution, space_id, closing_day, due_day, credit_limit').eq('space_id', space.id).eq('type', 'credit_card').eq('archived', false).order('name'),
+    db.from('bills').select('amount').eq('space_id', space.id).eq('status', 'open').lte('due_date', end),
+    key === 'casal'
+      ? db.from('transactions').select('amount, created_by').eq('space_id', space.id).eq('kind', 'expense').gte('occurred_on', start).lte('occurred_on', end)
+      : Promise.resolve({ data: [] }),
+    db.from('profiles').select('id, display_name'),
   ]);
+  const cards = (cardsRes.data ?? []) as Card[];
+  const cardData = await loadCardData(db, cards, today);
+  const billsLeft = (monthBillsRes.data ?? []).reduce((s: number, b: any) => s + Number(b.amount), 0);
+  const forecast = Math.round((summary.balance - billsLeft) * 100) / 100;
+  const budgetLimit = budgets.reduce((s, b) => s + b.limit, 0);
+  const budgetSpent = budgets.reduce((s, b) => s + b.spent, 0);
+  const budgetPct = budgetLimit ? Math.round((budgetSpent / budgetLimit) * 100) : 0;
+  const over = budgets.filter((b) => b.spent > b.limit);
+  const top = summary.categories.slice(0, 4);
+  const rest = summary.categories.slice(4).reduce((s, c) => s + c.total, 0);
+  const pie = rest > 0 ? [...top, { name: 'Outros', total: Math.round(rest * 100) / 100 }] : top;
+  const names: Record<string, string> = Object.fromEntries((membersRes.data ?? []).map((m: any) => [m.id, m.display_name.split(' ')[0]]));
+  const byPerson: Record<string, number> = {};
+  for (const t of (whoRes as any).data ?? []) {
+    const who = t.created_by ?? 'x';
+    byPerson[who] = (byPerson[who] ?? 0) + Number(t.amount);
+  }
+  const people = Object.entries(byPerson).map(([id, total]) => ({ name: names[id] ?? 'Outro', total })).sort((a, b) => b.total - a.total);
+  const peopleSum = people.reduce((s, p) => s + p.total, 0);
   const events = evRes.error ? [] : evRes.data ?? [];
   const bills = billsRes.data ?? [];
   const goals = goalsRes.data ?? [];
   const txs = txRes.data ?? [];
 
-  const spentPct = summary.income > 0 ? Math.min(100, Math.round((summary.expense / summary.income) * 100)) : 0;
   const firstName = ctx.name.split(' ')[0];
   const spaceLabel = key === 'pessoal' ? firstName : 'Família';
 
@@ -72,48 +123,117 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         <Link href="/" className={key === 'casal' ? 'on' : ''} aria-current={key === 'casal' ? 'page' : undefined}>Família</Link>
       </nav>
 
-      <section className="hero" aria-label="Resumo do mês">
+      <section className="hero hero-blue" aria-label="Resumo do mês">
         <div className="hero-top">
-          <span className="chip-soft" style={{ textTransform: 'capitalize' }}>{monthName(today)} · {spaceLabel}</span>
-          <span className="tiny muted">{daysLeft === 0 ? 'Último dia do mês' : `${daysLeft} dias para fechar`}</span>
+          <span className="hero-chip" style={{ textTransform: 'capitalize' }}>Saldo de {monthName(today)} · {spaceLabel}</span>
+          <span className="tiny" style={{ color: '#c9d6ff' }}>{daysLeft === 0 ? 'Último dia' : `${daysLeft} dias para fechar`}</span>
         </div>
-        <div>
-          <div className="label">Sobra até o fim do mês</div>
-          <div className={`big-number ${summary.balance < 0 ? 'neg' : ''}`}>{brl(summary.balance)}</div>
+        <div className={`big-number ${summary.balance < 0 ? 'neg' : ''}`} style={{ color: summary.balance < 0 ? '#ffb3a1' : '#fff' }}>{brl(summary.balance)}</div>
+        <div className="hero-cols">
+          <div><span>Entrou</span><b>{brl(summary.income)}</b></div>
+          <div><span>Saiu</span><b>{brl(summary.expense)}</b></div>
+          <div><span>Fim do mês</span><b style={{ color: forecast < 0 ? '#ffb3a1' : undefined }}>{brl(forecast)}</b></div>
         </div>
-        <div>
-          <div className="bar" aria-label={`${spentPct}% das entradas já gastos`}>
-            <span className={spentPct >= 90 ? 'warn' : ''} style={{ width: `${spentPct}%` }} />
-          </div>
-          <div className="bar-labels">
-            <span>{summary.income > 0 ? `${spentPct}% das entradas já usadas` : 'Lance uma entrada para ver o progresso'}</span>
-          </div>
-        </div>
-        <div className="flow">
-          <div className="flow-item">
-            <div className="flow-row">
-              <span className="flow-icon in"><IconArrowDown size={15} /></span>
-              <span className="tiny muted">Entradas</span>
-            </div>
-            <div className="value">{brl(summary.income)}</div>
-          </div>
-          <div className="flow-item">
-            <div className="flow-row">
-              <span className="flow-icon out"><IconArrowUp size={15} /></span>
-              <span className="tiny muted">Saídas</span>
-            </div>
-            <div className="value">{brl(summary.expense)}</div>
-          </div>
-        </div>
+        {billsLeft > 0 && <div className="tiny" style={{ color: '#c9d6ff' }}>“Fim do mês” já desconta {brl(billsLeft)} de contas que ainda vão vencer.</div>}
       </section>
 
       <nav className="quick" aria-label="Atalhos">
         <Link href={`/lancar${q}`}><span className="quick-icon"><IconMinus /></span>Gasto</Link>
         <Link href={`/lancar${q ? q + '&' : '?'}tipo=receita`}><span className="quick-icon"><IconPlus /></span>Entrada</Link>
-        <Link href={`/contas${q}`}><span className="quick-icon"><IconReceipt /></span>Contas</Link>
+        <Link href={`/orcamento${q}`}><span className="quick-icon"><IconPie /></span>Orçamento</Link>
         <Link href="/mais#metas"><span className="quick-icon"><IconTarget /></span>Metas</Link>
       </nav>
 
+
+      <section className="card stack" aria-label="Orçamento do mês">
+        <div className="section-head">
+          <h2>Orçamento do mês</h2>
+          <Link href={`/orcamento${q}`}>{budgets.length ? 'Ajustar' : 'Definir'}</Link>
+        </div>
+        {budgets.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon"><IconPie /></span>
+            <div><p>Defina quanto quer gastar por categoria e o app avisa quando estiver perto do limite.</p></div>
+          </div>
+        ) : (
+          <>
+            <div className="row small" style={{ justifyContent: 'space-between' }}>
+              <span><b>{brl(budgetSpent)}</b> <span className="muted">de {brl(budgetLimit)}</span></span>
+              <b style={{ color: budgetPct > 100 ? 'var(--late)' : budgetPct >= 80 ? 'var(--warn)' : 'var(--accent)' }}>{budgetPct}%</b>
+            </div>
+            <div className="bar"><span className={budgetPct >= 80 ? 'warn' : ''} style={{ width: `${Math.min(100, budgetPct)}%` }} /></div>
+            {over.length > 0 ? (
+              <div className="tiny" style={{ color: 'var(--late)' }}>
+                {over.slice(0, 2).map((b) => `${b.name} passou do limite (${brl(b.spent)} de ${brl(b.limit)})`).join(' · ')}
+              </div>
+            ) : (
+              <div className="tiny muted">{daysLeft} dias restantes · tudo dentro do limite</div>
+            )}
+          </>
+        )}
+      </section>
+
+      {pie.length > 0 && (
+        <section className="card stack" aria-label="Para onde foi o dinheiro">
+          <div className="section-head">
+            <h2>Para onde foi o dinheiro</h2>
+            <span className="tiny muted" style={{ textTransform: 'capitalize' }}>{monthName(today)}</span>
+          </div>
+          <div className="row" style={{ gap: 16 }}>
+            <Donut items={pie} />
+            <div className="grow stack" style={{ gap: 8 }}>
+              {pie.map((c, i) => (
+                <div className="row small" key={c.name} style={{ gap: 8 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: DONUT[i % DONUT.length], flex: 'none' }} aria-hidden="true" />
+                  <span className="grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                  <span className="muted" style={{ whiteSpace: 'nowrap' }}>{brl(c.total)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="card stack" aria-label="Cartões">
+        <div className="section-head">
+          <h2>Cartões</h2>
+          <Link href="/cartoes">{cards.length ? 'Ver todos' : 'Cadastrar'}</Link>
+        </div>
+        {cards.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon"><IconCardSmall /></span>
+            <div><p>Cadastre seus cartões para ver fatura, limite e parcelas aqui.</p></div>
+          </div>
+        ) : (
+          cards.slice(0, 3).map((c) => {
+            const d = cardData.get(c.id)!;
+            const inv = invoiceToPay(d.invoices, d.current);
+            const [ca, cb] = cardColors(c);
+            const limit = Number(c.credit_limit ?? 0);
+            const pct = limit ? Math.min(100, Math.round((d.used / limit) * 100)) : 0;
+            return (
+              <Link href={`/cartoes?c=${c.id}`} key={c.id} className="stack home-card" style={{ gap: 8 }}>
+                <div className="row">
+                  <span className="mini-card" style={{ background: `linear-gradient(135deg, ${ca}, ${cb})` }} aria-hidden="true" />
+                  <div className="grow">
+                    <div className="item-title">{c.name}</div>
+                    <div className={`item-sub ${inv.status === 'vencida' ? 'late' : inv.status === 'fechada' ? 'warn' : ''}`}>
+                      {inv.status === 'paga' ? 'Fatura paga' : `Fatura ${inv.status} · vence ${inv.dueOn.slice(8, 10)}/${inv.dueOn.slice(5, 7)}`}
+                    </div>
+                  </div>
+                  <span className="amount" style={{ fontWeight: 800 }}>{brl(inv.total)}</span>
+                </div>
+                {limit > 0 && (
+                  <>
+                    <div className="bar thin"><span style={{ width: `${pct}%` }} /></div>
+                    <div className="tiny muted">Disponível {brl(Math.max(0, limit - d.used))} de {brl(limit)}</div>
+                  </>
+                )}
+              </Link>
+            );
+          })
+        )}
+      </section>
 
       <section className="card" aria-label="Agenda">
         <div className="section-head">
@@ -174,6 +294,23 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
           </div>
         )}
       </section>
+
+      {key === 'casal' && people.length > 0 && (
+        <section className="card stack" aria-label="Quem gastou">
+          <div className="section-head">
+            <h2>Quem gastou</h2>
+            <span className="tiny muted">na Família este mês</span>
+          </div>
+          <div className="who-bar" aria-hidden="true">
+            {people.map((p, i) => <span key={p.name} style={{ width: `${(p.total / peopleSum) * 100}%`, background: DONUT[i % DONUT.length] }} />)}
+          </div>
+          <div className="row small" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            {people.map((p) => (
+              <span key={p.name}><b>{p.name}</b> <span className="muted">{brl(p.total)} · {Math.round((p.total / peopleSum) * 100)}%</span></span>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="card stack" aria-label="Metas">
         <div className="section-head">

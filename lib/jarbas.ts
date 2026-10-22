@@ -4,12 +4,13 @@ import { brl, longDate, todaySP } from '@/lib/format';
 import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
 import { ensureSchema } from '@/lib/migrate';
 import { invoiceToPay, loadCardData, type Card } from '@/lib/cards';
+import { getBudgets, setBudget } from '@/lib/budget';
 
 /** Ação mostrada como cartão no chat */
 export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
 
 /** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
-export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura']);
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -96,6 +97,16 @@ export const TOOLS = [
     name: 'parcelar_lancamento',
     description: 'Transforma um lançamento já feito à vista em compra parcelada (ex.: lançou 4100 mas foi em 10x). Mantém data, cartão e categoria.',
     input_schema: { type: 'object', properties: { lancamento_id: { type: 'string' }, parcelas: { type: 'integer' } }, required: ['lancamento_id', 'parcelas'] },
+  },
+  {
+    name: 'definir_orcamento',
+    description: 'Define o limite mensal de gasto de uma categoria (vale todo mês até mudar). Valor 0 remove o limite.',
+    input_schema: { type: 'object', properties: { categoria: { type: 'string' }, valor: { type: 'number' }, espaco: { type: 'string', enum: ['casal', 'pessoal'] } }, required: ['categoria', 'valor', 'espaco'] },
+  },
+  {
+    name: 'ver_orcamento',
+    description: 'Mostra o orçamento do mês: limite e quanto já foi gasto em cada categoria.',
+    input_schema: { type: 'object', properties: { espaco: { type: 'string', enum: ['casal', 'pessoal'] } }, required: ['espaco'] },
   },
   {
     name: 'ver_cartoes',
@@ -186,6 +197,7 @@ Como agir:
 - IMPORTANTE para ser rápido: quando for gravar algo (lançar, agendar, pagar, criar), escreva PRIMEIRO a confirmação curta para a pessoa e, no mesmo turno, chame a(s) ferramenta(s). Ex.: "Anotado: R$ 85,00 de mercado na Família." + registrar_lancamento.
 - Gasto ou receita contado → registrar_lancamento com a categoria mais adequada da lista.
 - Cartão de crédito: compra parcelada ("10x", "em 10 vezes", "parcelei") → registrar_lancamento com valor TOTAL e parcelas; o app cria uma parcela por fatura. Se a pessoa disser só o valor da parcela ("10 de 410"), multiplique. Se disser que um lançamento já feito foi parcelado, use parcelar_lancamento. Pagar a fatura do cartão → pagar_fatura (nunca registre a fatura como despesa, senão conta em dobro). Perguntas sobre fatura, limite ou cartão → ver_cartoes.
+- Orçamento: "quero gastar no máximo 800 com mercado" → definir_orcamento. "Como está o orçamento?", "ainda posso gastar com lazer?" → ver_orcamento. Ao lançar um gasto numa categoria que passou de 80% do limite, avise em poucas palavras.
 - Compromissos, lembretes e "me lembra" → agendar. Converta datas e horas relativas ("amanhã às 8", "sexta 15h", "daqui 2 horas") para AAAA-MM-DDTHH:MM com base no momento atual. "Me lembra 1 hora antes" → lembrar_minutos_antes = 60. Se a pessoa não disser quando avisar, compromisso avisa 30 minutos antes e lembrete avisa na hora (0).
 - Conta a pagar num horário ("amanhã tenho que pagar a conta às 10") → agende o lembrete; se houver valor, cadastre também com criar_conta_a_pagar.
 - Se perceber conflito com algo já na agenda, avise numa frase.
@@ -282,7 +294,12 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
         amount: parc ? Number((tx as any).total) : Number(tx.amount),
         income: kind === 'income',
       });
-      return JSON.stringify({ ok: true, lancamento_id: tx.id, categoria: tx.categories?.name ?? null, ...(parc ? { parcelas: parc, valor_parcela: (tx as any).installment_amount } : {}) });
+      let orcamento: any = undefined;
+      if (kind === 'expense' && tx.categories?.name) {
+        const line = (await getBudgets(db, spaceId(input.espaco))).find((x) => x.name === tx.categories.name);
+        if (line && line.spent >= line.limit * 0.8) orcamento = { limite: line.limit, gasto_no_mes: line.spent };
+      }
+      return JSON.stringify({ ok: true, lancamento_id: tx.id, categoria: tx.categories?.name ?? null, orcamento, ...(parc ? { parcelas: parc, valor_parcela: (tx as any).installment_amount } : {}) });
     }
     case 'criar_conta_a_pagar': {
       const rec = input.recorrencia === 'mensal' ? 'monthly' : input.recorrencia === 'anual' ? 'yearly' : 'none';
@@ -369,6 +386,18 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       await db.from('transactions').delete().eq('id', t.id);
       actions.push({ kind: 'transaction', title: t.description, sub: `Agora em ${n}x de ${brl(tx.installment_amount)}`, amount: Number(t.amount) });
       return JSON.stringify({ ok: true, parcelas: n, valor_parcela: tx.installment_amount });
+    }
+    case 'definir_orcamento': {
+      const cat = await categoryId(input.categoria, 'expense');
+      if (!cat) return JSON.stringify({ ok: false, erro: 'Categoria não encontrada' });
+      await setBudget(db, spaceId(input.espaco), cat, Number(input.valor));
+      actions.push({ kind: 'goal', title: `Orçamento · ${input.categoria}`, sub: Number(input.valor) > 0 ? `Limite mensal · ${spaceName(spaceId(input.espaco))}` : 'Limite removido', amount: Number(input.valor) > 0 ? Number(input.valor) : undefined });
+      return JSON.stringify({ ok: true });
+    }
+    case 'ver_orcamento': {
+      const b = await getBudgets(db, spaceId(input.espaco));
+      if (!b.length) return JSON.stringify({ ok: true, orcamento: 'nenhum limite definido' });
+      return JSON.stringify(b.map((x) => ({ categoria: x.name, limite: x.limit, gasto: x.spent, restante: Math.round((x.limit - x.spent) * 100) / 100 })));
     }
     case 'ver_cartoes':
     case 'pagar_fatura': {

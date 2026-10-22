@@ -92,3 +92,6 @@ export const IconX = ({ size = 14 }: P) => (
 export const IconCard = ({ size = 22 }: P) => (
   <svg {...base(size)}><rect x="2.5" y="5" width="19" height="14" rx="3" /><path d="M2.5 10h19M6.5 15h4" /></svg>
 );
+export const IconPie = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M21 12a9 9 0 1 1-9-9v9z" /><path d="M15 3.5A9 9 0 0 1 20.5 9H15z" /></svg>
+);

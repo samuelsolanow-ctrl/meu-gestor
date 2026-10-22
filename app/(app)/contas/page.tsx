@@ -99,10 +99,10 @@ export default async function ContasPage({ searchParams }: { searchParams: Promi
               <div className="item" key={b.id}>
                 <div className="item-icon income"><IconCheck /></div>
                 <div className="grow">
-                  <div className="item-title" style={{ color: '#7f908a', textDecoration: 'line-through' }}>{b.name}</div>
+                  <div className="item-title" style={{ color: '#7d8aa8', textDecoration: 'line-through' }}>{b.name}</div>
                   <div className="item-sub">Paga</div>
                 </div>
-                <span className="amount" style={{ color: '#7f908a' }}>{brl(b.amount)}</span>
+                <span className="amount" style={{ color: '#7d8aa8' }}>{brl(b.amount)}</span>
               </div>
             ))}
           </div>

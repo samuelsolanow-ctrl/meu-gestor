@@ -100,6 +100,7 @@ export async function POST(req: Request) {
             try {
               const out = await runTool(ctx, tu.name, tu.input, actions);
               if (/"ok":\s*false/.test(out)) failed = true;
+              if (/"orcamento":\{/.test(out)) failed = true; // deixa o Jarbas avisar do limite
               results.push({ type: 'tool_result', tool_use_id: tu.id, content: out });
             } catch (e: any) {
               failed = true;

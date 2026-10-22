@@ -6,6 +6,7 @@ import { getContext } from '@/lib/context';
 import { addBill, addTransaction, payBill } from '@/lib/finance';
 import { parseMoney, todaySP } from '@/lib/format';
 import { ensureSchema } from '@/lib/migrate';
+import { getBudgets, setBudget } from '@/lib/budget';
 
 function spaceIdFrom(ctx: Awaited<ReturnType<typeof getContext>>, value: FormDataEntryValue | null) {
   return value === 'pessoal' ? ctx.pessoal.id : ctx.casal.id;
@@ -146,4 +147,23 @@ export async function signOutAction() {
   const ctx = await getContext();
   await ctx.supabase.auth.signOut();
   redirect('/entrar');
+}
+
+export async function saveBudgetsAction(form: FormData) {
+  const ctx = await getContext();
+  const spaceId = spaceIdFrom(ctx, form.get('espaco'));
+  const current = Object.fromEntries((await getBudgets(ctx.supabase, spaceId)).map((b) => [b.categoryId, b.limit]));
+  const jobs: Promise<unknown>[] = [];
+  for (const [k, v] of form.entries()) {
+    if (!k.startsWith('b:')) continue;
+    const cat = k.slice(2);
+    const raw = String(v).trim();
+    const amount = raw ? parseMoney(raw) : 0;
+    if (!Number.isFinite(amount)) continue;
+    if ((current[cat] ?? 0) === (amount > 0 ? Math.round(amount * 100) / 100 : 0)) continue;
+    jobs.push(setBudget(ctx.supabase, spaceId, cat, amount));
+  }
+  await Promise.all(jobs);
+  revalidatePath('/', 'layout');
+  redirect(form.get('espaco') === 'pessoal' ? '/?e=pessoal' : '/');
 }

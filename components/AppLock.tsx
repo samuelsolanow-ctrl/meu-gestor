@@ -86,7 +86,7 @@ export default function AppLock({ children, initialLocked }: { children: React.R
             <>
               <span className="brand-mark" style={{ width: 72, height: 72, borderRadius: 20 }}><IconLogo size={40} /></span>
               <div style={{ textAlign: 'center' }}>
-                <div style={{ fontFamily: 'var(--serif)', fontSize: 34 }}>Meu Gestor</div>
+                <div style={{ fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 800 }}>Meu Gestor</div>
                 <div className="small muted">{failed ? 'Não reconheci. Tente de novo.' : 'Bloqueado com Face ID'}</div>
               </div>
               <button className="btn btn-primary btn-block" style={{ maxWidth: 320 }} onClick={() => unlock(false)} disabled={busy}>

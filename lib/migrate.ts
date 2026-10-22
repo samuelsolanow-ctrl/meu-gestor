@@ -2,7 +2,7 @@ import { appOrigin, cronKey } from '@/lib/secrets';
 
 // O próprio app atualiza a estrutura do banco quando precisa.
 // Usa a conexão direta POSTGRES_URL que a integração Supabase + Vercel já criou.
-const VERSION = 5;
+const VERSION = 6;
 
 let running: Promise<void> | null = null;
 
@@ -130,6 +130,13 @@ async function migrate() {
         using (exists (select 1 from public.investments i where i.id = investment_id and public.can_access_space(i.space_id)))
         with check (exists (select 1 from public.investments i where i.id = investment_id and public.can_access_space(i.space_id)));
       grant select, insert, update, delete on public.investments, public.investment_moves to authenticated;
+    `);
+
+    // v6 → categoria Bebê (fralda, fórmula, pediatra…) para todas as famílias
+    await sql.unsafe(`
+      insert into public.categories (family_id, name, kind, icon)
+        select id, 'Bebê', 'expense', 'baby' from public.families
+      on conflict do nothing;
     `);
 
     // v2 → agendador do banco chama os lembretes a cada minuto

@@ -202,6 +202,7 @@ as $$
     (fid, 'Transporte',              'expense', 'car'),
     (fid, 'Saúde',                   'expense', 'heart'),
     (fid, 'Educação',                'expense', 'school'),
+    (fid, 'Bebê',                    'expense', 'baby'),
     (fid, 'Restaurantes e delivery', 'expense', 'food'),
     (fid, 'Lazer',                   'expense', 'smile'),
     (fid, 'Assinaturas',             'expense', 'repeat'),

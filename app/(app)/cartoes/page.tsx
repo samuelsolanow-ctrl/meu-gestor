@@ -168,6 +168,7 @@ export default async function CartoesPage({ searchParams }: { searchParams: Prom
 
       <section className="card stack" aria-label="Compras da fatura">
         <div className="card-head"><h2>Compras</h2><span className="small muted">{inv.items.length}</span></div>
+        <Link href="/jarbas" className="import-tip">Tem a fatura em PDF? Mande para o Jarbas pelo clipe que ele importa todas as compras, com parcelas e sem duplicar.</Link>
         <details>
           <summary className="btn btn-block btn-primary" style={{ listStyle: 'none' }}>Nova compra no {card.name}</summary>
           <div style={{ marginTop: 14 }}>

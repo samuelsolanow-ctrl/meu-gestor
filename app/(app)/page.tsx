@@ -4,6 +4,7 @@ import { getContext, pickSpace } from '@/lib/context';
 import { monthSummary } from '@/lib/finance';
 import { getBudgets } from '@/lib/budget';
 import { listInvestments } from '@/lib/investments';
+import { forecast as getForecast } from '@/lib/forecast';
 import { cardColors, invoiceToPay, loadCardData, type Card } from '@/lib/cards';
 import { fmtWhen } from '@/lib/agenda';
 import { brl, daysBetween, dueLabel, monthName, monthRange, shortDate, todaySP } from '@/lib/format';
@@ -57,7 +58,7 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
   const q = key === 'pessoal' ? '?e=pessoal' : '';
 
   const { start } = monthRange(today);
-  const [summary, billsRes, goalsRes, txRes, evRes, budgets, cardsRes, monthBillsRes, whoRes, membersRes, inv] = await Promise.all([
+  const [summary, billsRes, goalsRes, txRes, evRes, budgets, cardsRes, monthBillsRes, whoRes, membersRes, inv, fc] = await Promise.all([
     monthSummary(db, space.id, today),
     db.from('bills').select('id, name, amount, due_date').eq('space_id', space.id).eq('status', 'open').order('due_date').limit(4),
     db.from('goals').select('id, name, target_amount, current_amount, deadline').eq('space_id', space.id).order('created_at'),
@@ -71,7 +72,10 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
       : Promise.resolve({ data: [] }),
     db.from('profiles').select('id, display_name'),
     listInvestments(db).catch(() => ({ items: [], invested: 0, current: 0, gain: 0, gainPct: 0 })),
+    getForecast(db, space.id, today).catch(() => null),
   ]);
+  const fcMax = fc ? Math.max(1, ...fc.months.map((m) => Math.abs(m.balance))) : 1;
+  const fcWorst = fc ? fc.months.reduce((a, b) => (b.balance < a.balance ? b : a), fc.months[0]) : null;
   const cards = (cardsRes.data ?? []) as Card[];
   const cardData = await loadCardData(db, cards, today);
   const billsLeft = (monthBillsRes.data ?? []).reduce((s: number, b: any) => s + Number(b.amount), 0);
@@ -174,6 +178,26 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
           </>
         )}
       </section>
+
+      {fc && fcWorst && (
+        <Link href={`/previsao${q}`} className="card stack tx-link" aria-label="Previsão dos próximos 6 meses">
+          <div className="section-head">
+            <h2>Próximos 6 meses</h2>
+            <span className="tiny" style={{ color: 'var(--accent)', fontWeight: 600 }}>Simular compra</span>
+          </div>
+          <div className="mini-fc" aria-hidden="true">
+            {fc.months.map((m) => (
+              <div key={m.key}>
+                <span className={`b ${m.balance < 0 ? 'neg' : ''}`} style={{ height: `${Math.max(6, Math.round((Math.abs(m.balance) / fcMax) * 70))}%` }} />
+                <span className="l">{m.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="tiny" style={{ color: fcWorst.balance < 0 ? 'var(--late)' : 'var(--muted)' }}>
+            {fcWorst.balance < 0 ? `Atenção: ${fcWorst.label} fecha no vermelho (${brl(fcWorst.balance)}).` : `Mês mais apertado: ${fcWorst.label}, sobra ${brl(fcWorst.balance)}.`}
+          </div>
+        </Link>
+      )}
 
       {pie.length > 0 && (
         <section className="card stack" aria-label="Para onde foi o dinheiro">

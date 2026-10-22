@@ -361,3 +361,33 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
 
 .unpay-btn { border: 1px solid var(--ok-line); background: transparent; color: var(--ok); border-radius: 999px; padding: 0 14px; min-height: 36px; font-weight: 700; font-size: 13px; cursor: pointer; }
 .check.on span { background: var(--ok); border-color: var(--ok); color: #06210f; display: grid; place-items: center; }
+
+/* Siri e atalhos */
+.copy-row { display: flex; gap: 8px; align-items: center; }
+.copy-code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 10px 12px; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text-2); }
+.howto { border-top: 1px solid var(--border); padding-top: 10px; }
+.howto summary { font-weight: 700; cursor: pointer; min-height: 36px; display: flex; align-items: center; }
+.howto ol { margin: 8px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-2); }
+
+/* Previsão */
+.fc-chart { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; align-items: end; }
+.fc-col { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.fc-val { font-size: 11px; font-weight: 700; white-space: nowrap; color: var(--text-2); }
+.fc-val.neg { color: var(--late); }
+.fc-track { height: 120px; width: 100%; display: flex; align-items: flex-end; justify-content: center; }
+.fc-bar { width: 70%; max-width: 34px; border-radius: 8px 8px 4px 4px; background: var(--accent); transition: height .25s; }
+.fc-bar.neg { background: var(--late); }
+.fc-bar.sim { outline: 2px dashed var(--warn); outline-offset: 2px; }
+.fc-label { font-size: 12px; color: var(--muted); text-transform: capitalize; }
+.fc-label.on { color: var(--text); font-weight: 800; }
+.fc-table { display: flex; flex-direction: column; gap: 2px; overflow-x: auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+.fc-tr { display: grid; grid-template-columns: 38px repeat(5, minmax(64px, 1fr)); gap: 6px; padding: 8px 2px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.fc-tr > span:not(:first-child) { text-align: right; }
+.fc-th { color: var(--muted); font-weight: 600; }
+.mini-fc { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; align-items: end; height: 70px; }
+.mini-fc > div { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+.mini-fc span.b { width: 60%; border-radius: 5px 5px 2px 2px; background: var(--accent); }
+.mini-fc span.b.neg { background: var(--late); }
+.mini-fc span.l { font-size: 11px; color: var(--muted); text-transform: capitalize; }
+.import-tip { display: block; font-size: 13px; color: var(--text-2); background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 12px; padding: 10px 12px; }
+.import-tip:hover { color: var(--text); }

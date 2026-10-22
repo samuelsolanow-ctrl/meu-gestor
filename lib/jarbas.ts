@@ -3,15 +3,16 @@ import { addBill, addTransaction, deleteTransaction, monthSummary, payBill, unpa
 import { addDays, addMonths, brl, longDate, monthName, monthRange, todaySP } from '@/lib/format';
 import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
 import { ensureSchema } from '@/lib/migrate';
-import { invoiceToPay, loadCardData, type Card } from '@/lib/cards';
+import { invoiceDates, invoiceToPay, loadCardData, shiftKey, type Card } from '@/lib/cards';
 import { getBudgets, setBudget } from '@/lib/budget';
+import { forecast } from '@/lib/forecast';
 import { INV_KINDS, addInvestment, listInvestments, moveInvestment } from '@/lib/investments';
 
 /** Ação mostrada como cartão no chat */
 export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
 
 /** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
-export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer', 'editar_conta_a_pagar', 'apagar_conta_a_pagar', 'desmarcar_conta_paga', 'registrar_investimento', 'movimentar_investimento']);
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer', 'editar_conta_a_pagar', 'apagar_conta_a_pagar', 'desmarcar_conta_paga', 'registrar_investimento', 'movimentar_investimento', 'importar_lancamentos']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -115,6 +116,34 @@ export const TOOLS = [
         espaco: { type: 'string', enum: ['casal', 'pessoal'] },
       },
       required: ['lancamento_id'],
+    },
+  },
+  {
+    name: 'importar_lancamentos',
+    description: 'Importa de uma vez TODAS as linhas de uma fatura de cartão ou extrato (PDF/foto). Não duplica o que já foi lançado. Em compras parceladas, informe a parcela ("3/10"): cria esta e as próximas.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        cartao_ou_conta: { type: 'string', description: 'Nome do cartão/conta ou do banco + final (ex.: "Santander final 1234")' },
+        vencimento_fatura: { type: 'string', description: 'AAAA-MM-DD do vencimento da fatura (se for fatura de cartão)' },
+        espaco: { type: 'string', enum: ['casal', 'pessoal'] },
+        itens: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              data: { type: 'string', description: 'AAAA-MM-DD da compra' },
+              descricao: { type: 'string' },
+              valor: { type: 'number', description: 'Valor da linha (da parcela, se parcelado), positivo' },
+              tipo: { type: 'string', enum: ['despesa', 'receita', 'estorno'] },
+              categoria: { type: 'string' },
+              parcela: { type: 'string', description: '"3/10" se for parcelado' },
+            },
+            required: ['data', 'descricao', 'valor'],
+          },
+        },
+      },
+      required: ['itens', 'espaco'],
     },
   },
   {
@@ -300,6 +329,7 @@ Como agir:
 - Você sugere, mas não move dinheiro nem compra investimentos.
 - Você também avisa sozinho: lembretes na hora marcada, contas às 8h e um fechamento do dia às 21h. Se a pessoa responder a um aviso ("paguei", "não teve nada"), aja de acordo.
 - Mensagens por ditado de voz vêm com erros ("pics" = Pix, números por extenso, sem pontuação). Entenda pelo sentido e pelo histórico ("muda pra 16h", "apaga esse" se referem ao que acabou de ser dito). Só pergunte se for impossível deduzir.
+- Fatura de cartão ou extrato (PDF/foto) com várias linhas → importar_lancamentos com TODAS as compras numa chamada só (nunca registrar_lancamento uma a uma). Informe o cartão e o vencimento da fatura. Inclua juros, IOF e anuidade como despesa; estornos/créditos como estorno. NÃO inclua "pagamento recebido", "saldo anterior", total da fatura nem limites. Depois diga em uma frase quantas entraram, quantas já existiam e o total.
 - Fotos e PDFs anexados: leia com atenção. Nota fiscal ou comprovante → registrar_lancamento com valor, local e data do documento. Boleto ou fatura → criar_conta_a_pagar com valor e vencimento. Outro documento → resuma o que importa em poucas palavras ou responda o que a pessoa perguntou sobre ele.
 
 INTELIGÊNCIA (é o que faz você valer a pena):
@@ -324,7 +354,7 @@ export async function buildSystem(ctx: AppContext) {
   const now = new Date();
   const today = todaySP();
   const safe = <T,>(p: Promise<T>, fb: T) => p.catch(() => fb);
-  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }, famMonth, myMonth, famBudget, bills, recent, goals, memory, prevMonth, invest] = await Promise.all([
+  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }, famMonth, myMonth, famBudget, bills, recent, goals, memory, prevMonth, invest, fc] = await Promise.all([
     db.from('categories').select('name, kind').order('name'),
     db.from('accounts').select('id, name, type, institution, space_id, closing_day, due_day, credit_limit').eq('archived', false),
     db.from('profiles').select('id, display_name'),
@@ -338,6 +368,7 @@ export async function buildSystem(ctx: AppContext) {
     db.from('jarbas_memory').select('id, fact, space_id').order('created_at', { ascending: false }).limit(60),
     safe(monthSummary(db, ctx.casal.id, addMonths(today, -1)), null),
     safe(listInvestments(db), null as any),
+    safe(forecast(db, ctx.casal.id, today), null as any),
   ]);
   const cardRows = ((accounts ?? []) as any[]).filter((a) => a.type === 'credit_card');
   const cardData = await safe(loadCardData(db, cardRows as Card[], today), new Map() as any);
@@ -366,6 +397,7 @@ export async function buildSystem(ctx: AppContext) {
         : 'nenhum cadastrado'
     }.`,
     `Contas a pagar (próx. 20 dias): ${billsOpen.length ? billsOpen.map((b) => `[id ${b.id}] ${b.name} ${money(Number(b.amount))} vence ${b.due_date}${b.recurrence === 'monthly' ? ' mensal' : ''} (${sp(b.space_id)})`).join('; ') : 'nenhuma'}.`,
+    `Previsão da Família (sobra por mês, já com contas fixas, parcelas e média do dia a dia; entrada média ${fc ? money(fc.incomeAvg) : '?'}): ${fc ? fc.months.map((m: any) => `${m.key} ${money(m.balance)} (fixas ${money(m.bills)}, parcelas ${money(m.installments)})`).join('; ') : 'sem dados'}. Para "posso comprar X em N vezes?", subtraia X/N dos meses afetados e diga se algum fica negativo.`,
     `Investimentos (separados do saldo): ${invest && invest.items.length ? `total ${money(invest.current)} (aplicado ${money(invest.invested)}, rendimento ${money(invest.gain)}); ` + invest.items.map((i: any) => `${i.name}${i.institution ? ` na ${i.institution}` : ''}${i.owner_name ? ` (${i.owner_name})` : ''} ${money(i.current_value)}`).join('; ') : 'nenhum cadastrado'}.`,
     `Metas: ${(goals.data ?? []).length ? (goals.data as any[]).map((g) => `${g.name} ${money(Number(g.current_amount))} de ${money(Number(g.target_amount))}${g.deadline ? ` até ${g.deadline}` : ''} (${sp(g.space_id)})`).join('; ') : 'nenhuma'}.`,
     `Últimos lançamentos (mais novo primeiro): ${((recent.data ?? []) as any[]).map((t) => `[id ${t.id}] ${t.occurred_on} ${t.kind === 'income' ? '+' : '-'}${money(Number(t.amount))} ${t.description}${t.installment_total ? ` ${t.installment_no}/${t.installment_total}` : ''} · ${t.categories?.name ?? 'sem categoria'}${t.accounts?.name ? ` · ${t.accounts.name}` : ''} · ${sp(t.space_id)}`).join(' | ') || 'nenhum'}.`,
@@ -553,6 +585,69 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       const { error } = await db.from('jarbas_memory').delete().eq('id', String(input.memoria_id));
       if (error) throw new Error(error.message);
       return JSON.stringify({ ok: true });
+    }
+    case 'importar_lancamentos': {
+      await ensureSchema();
+      const itens: any[] = Array.isArray(input.itens) ? input.itens.slice(0, 300) : [];
+      if (!itens.length) return JSON.stringify({ ok: false, erro: 'Nenhum item' });
+      const space = spaceId(input.espaco);
+      const accId = await accountId(input.cartao_ou_conta);
+      const { data: acc } = accId ? await db.from('accounts').select('id, name, type, closing_day, due_day').eq('id', accId).maybeSingle() : { data: null };
+      const { data: cats } = await db.from('categories').select('id, name, kind');
+      const catOf = (n: string | undefined, kind: string) => {
+        if (!n) return null;
+        const list = (cats ?? []).filter((c: any) => c.kind === kind);
+        return (list.find((c: any) => norm(c.name) === norm(n)) ?? list.find((c: any) => norm(c.name).includes(norm(n))))?.id ?? null;
+      };
+      // fatura de cartão: parcelas entram no dia do fechamento daquela fatura (assim caem na fatura certa)
+      let invoiceBase: string | null = null;
+      if (acc?.type === 'credit_card' && acc.closing_day && /^\d{4}-\d{2}-\d{2}$/.test(String(input.vencimento_fatura ?? ''))) {
+        const due = String(input.vencimento_fatura);
+        let key = due.slice(0, 7);
+        if (!(acc.due_day && acc.due_day > acc.closing_day)) key = shiftKey(key, -1);
+        invoiceBase = invoiceDates(key, acc.closing_day, acc.due_day).closesOn;
+      }
+      const dates = itens.map((i) => String(i.data)).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+      const from = addMonths(dates[0] ?? todaySP(), -2);
+      let q = db.from('transactions').select('amount, occurred_on, installment_no, installment_total, description').gte('occurred_on', from);
+      q = accId ? q.eq('account_id', accId) : q.eq('space_id', space);
+      const { data: existing } = await q;
+      const ex = (existing ?? []) as any[];
+      const same = (a: number, b: number) => Math.abs(a - b) < 0.05;
+      const rows: any[] = [];
+      let skipped = 0;
+      let future = 0;
+      let total = 0;
+      for (const it of itens) {
+        const valor = Math.abs(Number(it.valor));
+        if (!(valor > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(it.data))) continue;
+        const kind = it.tipo === 'receita' || it.tipo === 'estorno' ? 'income' : 'expense';
+        const desc = String(it.descricao ?? '').trim().slice(0, 120) || 'Lançamento';
+        const category_id = catOf(it.categoria, kind);
+        const m = /^(\d{1,2})\s*\/\s*(\d{1,2})$/.exec(String(it.parcela ?? '').trim());
+        const p = m ? Number(m[1]) : 0;
+        const n = m ? Number(m[2]) : 0;
+        if (m && n > 1 && p >= 1 && p <= n) {
+          if (ex.some((e) => e.installment_no === p && e.installment_total === n && same(Number(e.amount), valor))) { skipped++; continue; }
+          const base = invoiceBase ?? String(it.data);
+          const group = crypto.randomUUID();
+          for (let k = p; k <= n; k++) {
+            rows.push({ space_id: space, kind, amount: valor, description: desc, category_id, account_id: accId, occurred_on: addMonths(base, k - p), installment_no: k, installment_total: n, installment_group: group, source: 'import' });
+            if (k > p) future++;
+          }
+        } else {
+          if (ex.some((e) => !e.installment_total && same(Number(e.amount), valor) && Math.abs(Date.parse(e.occurred_on) - Date.parse(it.data)) <= 86_400_000)) { skipped++; continue; }
+          rows.push({ space_id: space, kind, amount: valor, description: desc, category_id, account_id: accId, occurred_on: String(it.data), source: 'import' });
+        }
+        total += kind === 'income' ? -valor : valor;
+      }
+      if (rows.length) {
+        const { error } = await db.from('transactions').insert(rows);
+        if (error) throw new Error(error.message);
+      }
+      const novos = rows.length - future;
+      actions.push({ kind: 'transaction', title: `${novos} ${novos === 1 ? 'lançamento importado' : 'lançamentos importados'}`, sub: `${acc?.name ?? 'Extrato'}${skipped ? ` · ${skipped} já existiam` : ''}${future ? ` · ${future} parcelas futuras` : ''}`, amount: Math.round(total * 100) / 100 });
+      return JSON.stringify({ ok: true, importados: novos, ja_existiam: skipped, parcelas_futuras_criadas: future, total_importado: Math.round(total * 100) / 100, cartao_encontrado: acc?.name ?? null, avisar: true });
     }
     case 'editar_conta_a_pagar': {
       await ensureSchema();

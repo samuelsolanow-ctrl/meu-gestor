@@ -7,7 +7,8 @@ import NotificationsToggle from '@/components/NotificationsToggle';
 import CalendarConnect from '@/components/CalendarConnect';
 import VoicePicker from '@/components/VoicePicker';
 import { headers } from 'next/headers';
-import { agendaSig, appOrigin } from '@/lib/secrets';
+import { agendaSig, appOrigin, atalhoToken } from '@/lib/secrets';
+import AtalhoSetup from '@/components/AtalhoSetup';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,8 +29,11 @@ export default async function MaisPage() {
     ctx.supabase.from('goals').select('id, name, target_amount, current_amount, deadline, space_id').order('created_at'),
   ]);
   let calendar: { webcal: string; https: string } | null = null;
+  let atalho: { siri: string; sms: string } | null = null;
   try {
     const origin = appOrigin((await headers()).get('host'));
+    const k = atalhoToken(ctx.userId);
+    atalho = { siri: `${origin}/api/atalho?k=${k}`, sms: `${origin}/api/atalho?k=${k}&origem=sms` };
     const path = `/api/agenda/${ctx.userId}.${agendaSig(ctx.userId)}.ics`;
     calendar = { https: origin + path, webcal: origin.replace(/^https?:/, 'webcal:') + path };
   } catch {}
@@ -160,6 +164,8 @@ export default async function MaisPage() {
         </div>
         <span className="muted" aria-hidden="true">›</span>
       </Link>
+
+      {atalho && <AtalhoSetup siriUrl={atalho.siri} smsUrl={atalho.sms} />}
 
       <VoicePicker firstName={firstName} />
 

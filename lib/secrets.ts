@@ -24,6 +24,19 @@ export function agendaSig(userId: string): string {
   return crypto.createHmac('sha256', derive('agenda')).update(userId).digest('hex').slice(0, 32);
 }
 
+/** Chave pessoal do atalho da Siri / SMS: "<userId>.<assinatura>" */
+export function atalhoToken(userId: string): string {
+  return `${userId}.${crypto.createHmac('sha256', derive('atalho')).update(userId).digest('hex').slice(0, 40)}`;
+}
+
+/** Confere a chave do atalho e devolve o id da pessoa (ou null) */
+export function atalhoUser(token: string | null | undefined): string | null {
+  const t = String(token ?? '').trim();
+  const userId = t.split('.')[0];
+  if (!/^[0-9a-f-]{36}$/i.test(userId)) return null;
+  return safeEqual(t, atalhoToken(userId)) ? userId : null;
+}
+
 export function safeEqual(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);

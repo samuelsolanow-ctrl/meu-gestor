@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from 'react';
 import { createBillAction } from '@/app/(app)/actions';
+import { REMIND_OPTIONS } from './EditBillForm';
 
 type Option = { id: string; name: string; kind?: string };
 
@@ -57,6 +58,14 @@ export default function BillForm({
               <option value="yearly">Todo ano</option>
             </select>
           </label>
+          <label className="field">
+            <span>Avisar</span>
+            <select className="input" name="aviso" defaultValue="2">
+              {REMIND_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="grid2">
           <label className="field">
             <span>De quem é</span>
             <select className="input" name="espaco" defaultValue={defaultSpace}>

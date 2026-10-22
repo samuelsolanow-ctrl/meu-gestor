@@ -17,6 +17,9 @@
   --radius: 20px;
   --serif: var(--font-sans), system-ui, sans-serif;
   --exp: #ff8a6b;
+  --ok: #4ade80;
+  --ok-soft: #0f2a1d;
+  --ok-line: #1d5a3a;
   --sans: var(--font-sans), system-ui, -apple-system, sans-serif;
   color-scheme: dark;
 }
@@ -340,3 +343,18 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
 .who-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; background: var(--surface-2); }
 .who-bar > span { display: block; height: 100%; }
 .tab-main { border-radius: 28px; width: 58px; height: 58px; margin-top: -22px; box-shadow: 0 8px 24px rgba(122, 162, 255, .4); }
+
+/* Contas pagas em verde */
+.bill-link { color: inherit; gap: 12px; min-width: 0; }
+.bill-link:hover { color: inherit; }
+.paid-list { border-color: var(--ok-line); background: linear-gradient(90deg, var(--ok-soft), var(--surface) 70%); }
+.paid-row { color: inherit; box-shadow: inset 3px 0 0 var(--ok); padding-left: 10px; border-radius: 4px; }
+.paid-row:hover { color: inherit; }
+.item-icon.paid { background: var(--ok-soft); color: var(--ok); border: 1px solid var(--ok-line); }
+.paid-text { color: var(--ok) !important; }
+.paid-banner { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-radius: 14px; background: var(--ok-soft); border: 1px solid var(--ok-line); color: var(--ok); font-weight: 700; font-size: 14px; }
+.tx-link { color: inherit; }
+.tx-link:hover { color: inherit; }
+.inv-on { background: var(--surface-2); border-radius: 12px; }
+.goal-edit summary::-webkit-details-marker { display: none; }
+.goal-edit[open] { padding-bottom: 8px; border-bottom: 1px solid var(--border); }

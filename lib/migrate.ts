@@ -2,7 +2,7 @@ import { appOrigin, cronKey } from '@/lib/secrets';
 
 // O próprio app atualiza a estrutura do banco quando precisa.
 // Usa a conexão direta POSTGRES_URL que a integração Supabase + Vercel já criou.
-const VERSION = 4;
+const VERSION = 5;
 
 let running: Promise<void> | null = null;
 
@@ -90,6 +90,46 @@ async function migrate() {
         using (public.can_access_space(space_id))
         with check (public.can_access_space(space_id));
       grant select, insert, update, delete on public.jarbas_memory to authenticated;
+    `);
+
+    // v5 → aviso de contas (dias antes) e investimentos (separados de receitas/despesas)
+    await sql.unsafe(`
+      alter table public.bills add column if not exists remind_days smallint not null default 2;
+      create table if not exists public.investments (
+        id             uuid primary key default gen_random_uuid(),
+        space_id       uuid not null references public.spaces(id) on delete cascade,
+        owner_name     text,
+        name           text not null,
+        institution    text,
+        kind           text not null default 'outro',
+        invested       numeric(14,2) not null default 0,
+        current_value  numeric(14,2) not null default 0,
+        notes          text,
+        archived       boolean not null default false,
+        updated_at     timestamptz not null default now(),
+        created_at     timestamptz not null default now()
+      );
+      create table if not exists public.investment_moves (
+        id             uuid primary key default gen_random_uuid(),
+        investment_id  uuid not null references public.investments(id) on delete cascade,
+        kind           text not null check (kind in ('aporte', 'resgate', 'atualizacao')),
+        amount         numeric(14,2) not null,
+        value_after    numeric(14,2) not null,
+        occurred_on    date not null default current_date,
+        created_by     uuid references public.profiles(id) on delete set null default auth.uid(),
+        created_at     timestamptz not null default now()
+      );
+      create index if not exists investment_moves_inv on public.investment_moves(investment_id, occurred_on desc);
+      alter table public.investments enable row level security;
+      alter table public.investment_moves enable row level security;
+      drop policy if exists investments_all on public.investments;
+      create policy investments_all on public.investments for all to authenticated
+        using (public.can_access_space(space_id)) with check (public.can_access_space(space_id));
+      drop policy if exists investment_moves_all on public.investment_moves;
+      create policy investment_moves_all on public.investment_moves for all to authenticated
+        using (exists (select 1 from public.investments i where i.id = investment_id and public.can_access_space(i.space_id)))
+        with check (exists (select 1 from public.investments i where i.id = investment_id and public.can_access_space(i.space_id)));
+      grant select, insert, update, delete on public.investments, public.investment_moves to authenticated;
     `);
 
     // v2 → agendador do banco chama os lembretes a cada minuto

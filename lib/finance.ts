@@ -76,6 +76,7 @@ export type NewBill = {
   recurrence?: 'none' | 'monthly' | 'yearly';
   categoryId?: string | null;
   accountId?: string | null;
+  remindDays?: number;
 };
 
 export async function addBill(db: DB, b: NewBill) {
@@ -91,6 +92,7 @@ export async function addBill(db: DB, b: NewBill) {
       recurrence: b.recurrence ?? 'none',
       category_id: b.categoryId || null,
       account_id: b.accountId || null,
+      ...(b.remindDays != null ? { remind_days: b.remindDays } : {}),
     })
     .select('id, name, amount, due_date, recurrence')
     .single();
@@ -134,6 +136,7 @@ export async function payBill(db: DB, billId: string, source: 'chat' | 'form' = 
       recurrence: bill.recurrence,
       categoryId: bill.category_id,
       accountId: bill.account_id,
+      remindDays: bill.remind_days ?? undefined,
     });
   }
   return { bill, alreadyPaid: false, next };
@@ -172,4 +175,66 @@ export async function monthSummary(db: DB, spaceId: string, refDate: string = to
     balance: Math.round((income - expense) * 100) / 100,
     categories,
   };
+}
+
+export type TxPatch = {
+  amount?: number;
+  description?: string;
+  categoryId?: string | null;
+  accountId?: string | null;
+  occurredOn?: string;
+  spaceId?: string;
+};
+
+/** Corrige um lançamento. Em compra parcelada: valor = novo TOTAL, data = 1ª parcela, vale para todas. */
+export async function updateTransaction(db: DB, id: string, p: TxPatch) {
+  await ensureSchema();
+  const { data: t, error } = await db.from('transactions').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!t) throw new Error('Lançamento não encontrado');
+  const patch: any = {};
+  if (p.description !== undefined) patch.description = p.description.trim() || t.description;
+  if (p.categoryId !== undefined) patch.category_id = p.categoryId;
+  if (p.accountId !== undefined) patch.account_id = p.accountId;
+  if (p.spaceId) patch.space_id = p.spaceId;
+  const group = t.installment_group as string | null;
+  if (group) {
+    if (Object.keys(patch).length) {
+      const { error: e } = await db.from('transactions').update(patch).eq('installment_group', group);
+      if (e) throw new Error(e.message);
+    }
+    if (p.amount || p.occurredOn) {
+      const { data: parts } = await db.from('transactions').select('id, amount, occurred_on, installment_no').eq('installment_group', group).order('installment_no');
+      const list = parts ?? [];
+      const n = list.length || 1;
+      const total = p.amount ?? list.reduce((s: number, x: any) => s + Number(x.amount), 0);
+      const first = p.occurredOn || list[0]?.occurred_on || t.occurred_on;
+      const cents = Math.round(total * 100);
+      const base = Math.floor(cents / n);
+      await Promise.all(
+        list.map((x: any, i: number) =>
+          db.from('transactions').update({ amount: (i === n - 1 ? cents - base * (n - 1) : base) / 100, occurred_on: addMonths(first, i) }).eq('id', x.id),
+        ),
+      );
+    }
+  } else {
+    if (p.amount) patch.amount = Math.round(p.amount * 100) / 100;
+    if (p.occurredOn) patch.occurred_on = p.occurredOn;
+    if (Object.keys(patch).length) {
+      const { error: e } = await db.from('transactions').update(patch).eq('id', id);
+      if (e) throw new Error(e.message);
+    }
+  }
+  return t;
+}
+
+/** Apaga o lançamento (e todas as parcelas, se for parcelado). */
+export async function deleteTransaction(db: DB, id: string) {
+  await ensureSchema();
+  const { data: t } = await db.from('transactions').select('id, installment_group').eq('id', id).maybeSingle();
+  if (!t) return [];
+  const q = db.from('transactions').delete();
+  const { data, error } = await (t.installment_group ? q.eq('installment_group', t.installment_group) : q.eq('id', id)).select('description, amount');
+  if (error) throw new Error(error.message);
+  return data ?? [];
 }

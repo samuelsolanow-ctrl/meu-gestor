@@ -1,6 +1,7 @@
 import { getContext } from '@/lib/context';
 import { brl } from '@/lib/format';
-import { createAccountAction, createGoalAction, signOutAction } from '../actions';
+import Link from 'next/link';
+import { createAccountAction, createGoalAction, deleteGoalAction, signOutAction, updateGoalAction } from '../actions';
 import FaceIdToggle from '@/components/FaceIdToggle';
 import NotificationsToggle from '@/components/NotificationsToggle';
 import CalendarConnect from '@/components/CalendarConnect';
@@ -24,7 +25,7 @@ export default async function MaisPage() {
     ctx.supabase.from('families').select('name, invite_code').maybeSingle(),
     ctx.supabase.from('profiles').select('id, display_name'),
     ctx.supabase.from('accounts').select('id, name, institution, type, space_id, closing_day, due_day').eq('archived', false).order('name'),
-    ctx.supabase.from('goals').select('id, name, target_amount, current_amount, space_id').order('created_at'),
+    ctx.supabase.from('goals').select('id, name, target_amount, current_amount, deadline, space_id').order('created_at'),
   ]);
   let calendar: { webcal: string; https: string } | null = null;
   try {
@@ -108,10 +109,26 @@ export default async function MaisPage() {
       <section className="card stack" id="metas" aria-label="Metas">
         <div className="card-head"><h2>Metas</h2></div>
         {(goals ?? []).map((g: any) => (
-          <div className="row small" key={g.id} style={{ justifyContent: 'space-between' }}>
-            <span style={{ fontWeight: 600 }}>{g.name} <span className="muted">· {whose(g.space_id)}</span></span>
-            <span className="muted">{brl(g.current_amount)} de {brl(g.target_amount)}</span>
-          </div>
+          <details key={g.id} className="goal-edit">
+            <summary className="row small" style={{ justifyContent: 'space-between', listStyle: 'none', cursor: 'pointer', minHeight: 44 }}>
+              <span style={{ fontWeight: 600 }}>{g.name} <span className="muted">· {whose(g.space_id)}</span></span>
+              <span className="muted">{brl(g.current_amount)} de {brl(g.target_amount)} ›</span>
+            </summary>
+            <form action={updateGoalAction} className="stack" style={{ marginTop: 8 }}>
+              <input type="hidden" name="id" value={g.id} />
+              <label className="field"><span>Nome</span><input className="input" name="nome" defaultValue={g.name} /></label>
+              <div className="grid2">
+                <label className="field"><span>Quanto precisa (R$)</span><input className="input" name="alvo" inputMode="decimal" defaultValue={String(g.target_amount).replace('.', ',')} /></label>
+                <label className="field"><span>Já tem (R$)</span><input className="input" name="atual" inputMode="decimal" defaultValue={String(g.current_amount).replace('.', ',')} /></label>
+              </div>
+              <label className="field"><span>Prazo</span><input className="input" type="date" name="prazo" defaultValue={g.deadline ?? ''} /></label>
+              <button className="btn btn-primary btn-block">Salvar meta</button>
+            </form>
+            <form action={deleteGoalAction} style={{ marginTop: 8 }}>
+              <input type="hidden" name="id" value={g.id} />
+              <button className="btn btn-block" style={{ border: 'none', color: 'var(--late)' }}>Excluir meta</button>
+            </form>
+          </details>
         ))}
         <details>
           <summary className="btn" style={{ listStyle: 'none' }}>Criar meta</summary>
@@ -135,6 +152,14 @@ export default async function MaisPage() {
           </form>
         </details>
       </section>
+
+      <Link href="/investimentos" className="card row tx-link" aria-label="Abrir investimentos">
+        <div className="grow">
+          <div style={{ fontWeight: 700 }}>Investimentos</div>
+          <div className="small muted">Patrimônio, rendimento, aportes e resgates</div>
+        </div>
+        <span className="muted" aria-hidden="true">›</span>
+      </Link>
 
       <VoicePicker firstName={firstName} />
 

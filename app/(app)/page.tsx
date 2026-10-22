@@ -3,11 +3,12 @@ import JarbasBar from '@/components/JarbasBar';
 import { getContext, pickSpace } from '@/lib/context';
 import { monthSummary } from '@/lib/finance';
 import { getBudgets } from '@/lib/budget';
+import { listInvestments } from '@/lib/investments';
 import { cardColors, invoiceToPay, loadCardData, type Card } from '@/lib/cards';
 import { fmtWhen } from '@/lib/agenda';
 import { brl, daysBetween, dueLabel, monthName, monthRange, shortDate, todaySP } from '@/lib/format';
 import {
-  IconBills, IconCalendar, IconChat, IconList, IconMinus, IconPlus, IconTarget, IconPie, IconCard as IconCardSmall,
+  IconBills, IconCalendar, IconChat, IconList, IconMinus, IconPlus, IconTarget, IconPie, IconCard as IconCardSmall, IconTrend,
 } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -56,7 +57,7 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
   const q = key === 'pessoal' ? '?e=pessoal' : '';
 
   const { start } = monthRange(today);
-  const [summary, billsRes, goalsRes, txRes, evRes, budgets, cardsRes, monthBillsRes, whoRes, membersRes] = await Promise.all([
+  const [summary, billsRes, goalsRes, txRes, evRes, budgets, cardsRes, monthBillsRes, whoRes, membersRes, inv] = await Promise.all([
     monthSummary(db, space.id, today),
     db.from('bills').select('id, name, amount, due_date').eq('space_id', space.id).eq('status', 'open').order('due_date').limit(4),
     db.from('goals').select('id, name, target_amount, current_amount, deadline').eq('space_id', space.id).order('created_at'),
@@ -69,6 +70,7 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
       ? db.from('transactions').select('amount, created_by').eq('space_id', space.id).eq('kind', 'expense').gte('occurred_on', start).lte('occurred_on', end)
       : Promise.resolve({ data: [] }),
     db.from('profiles').select('id, display_name'),
+    listInvestments(db).catch(() => ({ items: [], invested: 0, current: 0, gain: 0, gainPct: 0 })),
   ]);
   const cards = (cardsRes.data ?? []) as Card[];
   const cardData = await loadCardData(db, cards, today);
@@ -141,7 +143,7 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         <Link href={`/lancar${q}`}><span className="quick-icon"><IconMinus /></span>Gasto</Link>
         <Link href={`/lancar${q ? q + '&' : '?'}tipo=receita`}><span className="quick-icon"><IconPlus /></span>Entrada</Link>
         <Link href={`/orcamento${q}`}><span className="quick-icon"><IconPie /></span>Orçamento</Link>
-        <Link href="/mais#metas"><span className="quick-icon"><IconTarget /></span>Metas</Link>
+        <Link href="/investimentos"><span className="quick-icon"><IconTrend /></span>Investir</Link>
       </nav>
 
 
@@ -235,6 +237,26 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         )}
       </section>
 
+      <Link href="/investimentos" className="card stack tx-link" aria-label="Investimentos">
+        <div className="section-head">
+          <h2>Investimentos</h2>
+          <span className="tiny" style={{ color: 'var(--accent)', fontWeight: 600 }}>{inv.items.length ? 'Ver' : 'Cadastrar'}</span>
+        </div>
+        {inv.items.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon"><IconTrend /></span>
+            <div><p>Acompanhe Ágora, Santander e o que mais tiverem, separado das receitas e despesas.</p></div>
+          </div>
+        ) : (
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <span style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5 }}>{brl(inv.current)}</span>
+            <span className="small" style={{ color: inv.gain < 0 ? 'var(--late)' : 'var(--ok)', fontWeight: 700 }}>
+              {inv.gain >= 0 ? '+' : ''}{brl(inv.gain)} ({inv.gainPct.toFixed(1).replace('.', ',')}%)
+            </span>
+          </div>
+        )}
+      </Link>
+
       <section className="card" aria-label="Agenda">
         <div className="section-head">
           <h2>Agenda</h2>
@@ -281,14 +303,14 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
               const d = dueLabel(b.due_date, today);
               const tone = d.tone === 'late' ? 'late' : d.tone === 'soon' ? 'warn' : '';
               return (
-                <div className="item" key={b.id}>
+                <Link href={`/contas/${b.id}`} className="item tx-link" key={b.id}>
                   <div className={`item-icon ${tone}`}>{b.name.charAt(0)}</div>
                   <div className="grow">
                     <div className="item-title">{b.name}</div>
                     <div className={`item-sub ${tone}`}>{d.text}</div>
                   </div>
                   <span className="amount">{brl(b.amount)}</span>
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -358,14 +380,14 @@ export default async function PainelPage({ searchParams }: { searchParams: Promi
         ) : (
           <div className="list">
             {txs.map((t: any) => (
-              <div className="item" key={t.id}>
+              <Link href={`/lancamento/${t.id}?voltar=${encodeURIComponent('/' + q)}`} className="item tx-link" key={t.id} aria-label={`Editar ${t.description}`}>
                 <div className={`item-icon ${t.kind === 'income' ? 'income' : ''}`}>{(t.categories?.name ?? t.description).charAt(0)}</div>
                 <div className="grow">
                   <div className="item-title">{t.description}</div>
                   <div className="item-sub">{t.categories?.name ?? 'Sem categoria'} · {shortDate(t.occurred_on)}</div>
                 </div>
                 <span className={`amount ${t.kind === 'income' ? 'income' : ''}`}>{t.kind === 'income' ? '+ ' : '− '}{brl(t.amount)}</span>
-              </div>
+              </Link>
             ))}
           </div>
         )}

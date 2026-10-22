@@ -95,3 +95,6 @@ export const IconCard = ({ size = 22 }: P) => (
 export const IconPie = ({ size = 22 }: P) => (
   <svg {...base(size)}><path d="M21 12a9 9 0 1 1-9-9v9z" /><path d="M15 3.5A9 9 0 0 1 20.5 9H15z" /></svg>
 );
+export const IconTrend = ({ size = 22 }: P) => (
+  <svg {...base(size)}><path d="M3 17l6-6 4 4 8-8" /><path d="M15 7h6v6" /></svg>
+);

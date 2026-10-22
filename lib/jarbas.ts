@@ -1,16 +1,17 @@
 import type { AppContext } from '@/lib/context';
-import { addBill, addTransaction, monthSummary, payBill } from '@/lib/finance';
+import { addBill, addTransaction, deleteTransaction, monthSummary, payBill, updateTransaction } from '@/lib/finance';
 import { addDays, addMonths, brl, longDate, monthName, monthRange, todaySP } from '@/lib/format';
 import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
 import { ensureSchema } from '@/lib/migrate';
 import { invoiceToPay, loadCardData, type Card } from '@/lib/cards';
 import { getBudgets, setBudget } from '@/lib/budget';
+import { INV_KINDS, addInvestment, listInvestments, moveInvestment } from '@/lib/investments';
 
 /** Ação mostrada como cartão no chat */
 export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
 
 /** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
-export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer']);
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer', 'editar_conta_a_pagar', 'apagar_conta_a_pagar', 'registrar_investimento', 'movimentar_investimento']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -113,6 +114,62 @@ export const TOOLS = [
         espaco: { type: 'string', enum: ['casal', 'pessoal'] },
       },
       required: ['lancamento_id'],
+    },
+  },
+  {
+    name: 'editar_conta_a_pagar',
+    description: 'Corrige uma conta a pagar: nome, valor, vencimento, repetição ou com quantos dias de antecedência avisar. Envie só o que muda. Use o id de listar_contas_a_pagar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        conta_id: { type: 'string' },
+        nome: { type: 'string' },
+        valor: { type: 'number' },
+        vencimento: { type: 'string', description: 'AAAA-MM-DD' },
+        recorrencia: { type: 'string', enum: ['none', 'monthly', 'yearly'] },
+        avisar_dias_antes: { type: 'integer' },
+      },
+      required: ['conta_id'],
+    },
+  },
+  {
+    name: 'apagar_conta_a_pagar',
+    description: 'Exclui uma conta a pagar cadastrada (não é pagar; é remover).',
+    input_schema: { type: 'object', properties: { conta_id: { type: 'string' } }, required: ['conta_id'] },
+  },
+  {
+    name: 'ver_investimentos',
+    description: 'Lista os investimentos (separados das receitas/despesas): nome, onde está, titular, aplicado, valor atual e rendimento.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'registrar_investimento',
+    description: 'Cadastra uma aplicação nova para acompanhar (ex.: "tenho 20 mil num CDB na Ágora"). NÃO é despesa nem receita.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nome: { type: 'string', description: 'Ex.: CDB 110% CDI, Tesouro Selic 2029, PETR4' },
+        tipo: { type: 'string', enum: Object.keys(INV_KINDS) },
+        instituicao: { type: 'string', description: 'Ágora, Santander…' },
+        titular: { type: 'string', description: 'Nome da pessoa ou Família' },
+        valor_aplicado: { type: 'number' },
+        valor_atual: { type: 'number', description: 'Se diferente do aplicado' },
+      },
+      required: ['nome', 'valor_aplicado'],
+    },
+  },
+  {
+    name: 'movimentar_investimento',
+    description: 'Num investimento existente: aporte (colocou mais), resgate (tirou) ou atualizacao (informou quanto vale hoje).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        investimento: { type: 'string', description: 'Nome ou id do investimento' },
+        tipo: { type: 'string', enum: ['aporte', 'resgate', 'atualizacao'] },
+        valor: { type: 'number' },
+        data: { type: 'string', description: 'AAAA-MM-DD; omita para hoje' },
+      },
+      required: ['investimento', 'tipo', 'valor'],
     },
   },
   {
@@ -224,6 +281,8 @@ Como agir:
 - IMPORTANTE para ser rápido: quando for gravar algo (lançar, agendar, pagar, criar), escreva PRIMEIRO a confirmação curta para a pessoa e, no mesmo turno, chame a(s) ferramenta(s). Ex.: "Anotado: R$ 85,00 de mercado na Família." + registrar_lancamento.
 - Gasto ou receita contado → registrar_lancamento com a categoria mais adequada da lista.
 - Cartão de crédito: compra parcelada ("10x", "em 10 vezes", "parcelei") → registrar_lancamento com valor TOTAL e parcelas; o app cria uma parcela por fatura. Se a pessoa disser só o valor da parcela ("10 de 410"), multiplique. Se disser que um lançamento já feito foi parcelado, use parcelar_lancamento. Pagar a fatura do cartão → pagar_fatura (nunca registre a fatura como despesa, senão conta em dobro). Perguntas sobre fatura, limite ou cartão → ver_cartoes.
+- Investimentos ficam SEPARADOS: aplicar, aportar, resgatar ou atualizar o valor de um investimento nunca é registrar_lancamento (não é gasto nem receita). Use registrar_investimento (novo) ou movimentar_investimento (existente). Rendimento = valor atual − aplicado.
+- Contas a pagar: dá para corrigir (editar_conta_a_pagar) e mudar o aviso ("me avisa 5 dias antes da escola" → avisar_dias_antes = 5).
 - Orçamento: "quero gastar no máximo 800 com mercado" → definir_orcamento. "Como está o orçamento?", "ainda posso gastar com lazer?" → ver_orcamento. Ao lançar um gasto numa categoria que passou de 80% do limite, avise em poucas palavras.
 - Compromissos, lembretes e "me lembra" → agendar. Converta datas e horas relativas ("amanhã às 8", "sexta 15h", "daqui 2 horas") para AAAA-MM-DDTHH:MM com base no momento atual. "Me lembra 1 hora antes" → lembrar_minutos_antes = 60. Se a pessoa não disser quando avisar, compromisso avisa 30 minutos antes e lembrete avisa na hora (0).
 - Conta a pagar num horário ("amanhã tenho que pagar a conta às 10") → agende o lembrete; se houver valor, cadastre também com criar_conta_a_pagar.
@@ -258,7 +317,7 @@ export async function buildSystem(ctx: AppContext) {
   const now = new Date();
   const today = todaySP();
   const safe = <T,>(p: Promise<T>, fb: T) => p.catch(() => fb);
-  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }, famMonth, myMonth, famBudget, bills, recent, goals, memory, prevMonth] = await Promise.all([
+  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }, famMonth, myMonth, famBudget, bills, recent, goals, memory, prevMonth, invest] = await Promise.all([
     db.from('categories').select('name, kind').order('name'),
     db.from('accounts').select('id, name, type, institution, space_id, closing_day, due_day, credit_limit').eq('archived', false),
     db.from('profiles').select('id, display_name'),
@@ -266,11 +325,12 @@ export async function buildSystem(ctx: AppContext) {
     safe(monthSummary(db, ctx.casal.id, today), null),
     safe(monthSummary(db, ctx.pessoal.id, today), null),
     safe(getBudgets(db, ctx.casal.id, today), []),
-    db.from('bills').select('name, amount, due_date, space_id').eq('status', 'open').lte('due_date', addDays(today, 20)).order('due_date').limit(12),
+    db.from('bills').select('id, name, amount, due_date, space_id, recurrence').eq('status', 'open').lte('due_date', addDays(today, 20)).order('due_date').limit(12),
     db.from('transactions').select('id, kind, amount, description, occurred_on, space_id, installment_no, installment_total, categories(name), accounts(name)').order('created_at', { ascending: false }).limit(10),
     db.from('goals').select('name, target_amount, current_amount, deadline, space_id').order('created_at'),
     db.from('jarbas_memory').select('id, fact, space_id').order('created_at', { ascending: false }).limit(60),
     safe(monthSummary(db, ctx.casal.id, addMonths(today, -1)), null),
+    safe(listInvestments(db), null as any),
   ]);
   const cardRows = ((accounts ?? []) as any[]).filter((a) => a.type === 'credit_card');
   const cardData = await safe(loadCardData(db, cardRows as Card[], today), new Map() as any);
@@ -298,7 +358,8 @@ export async function buildSystem(ctx: AppContext) {
             .join(' | ')
         : 'nenhum cadastrado'
     }.`,
-    `Contas a pagar (próx. 20 dias): ${billsOpen.length ? billsOpen.map((b) => `${b.name} ${money(Number(b.amount))} vence ${b.due_date} (${sp(b.space_id)})`).join('; ') : 'nenhuma'}.`,
+    `Contas a pagar (próx. 20 dias): ${billsOpen.length ? billsOpen.map((b) => `[id ${b.id}] ${b.name} ${money(Number(b.amount))} vence ${b.due_date}${b.recurrence === 'monthly' ? ' mensal' : ''} (${sp(b.space_id)})`).join('; ') : 'nenhuma'}.`,
+    `Investimentos (separados do saldo): ${invest && invest.items.length ? `total ${money(invest.current)} (aplicado ${money(invest.invested)}, rendimento ${money(invest.gain)}); ` + invest.items.map((i: any) => `${i.name}${i.institution ? ` na ${i.institution}` : ''}${i.owner_name ? ` (${i.owner_name})` : ''} ${money(i.current_value)}`).join('; ') : 'nenhum cadastrado'}.`,
     `Metas: ${(goals.data ?? []).length ? (goals.data as any[]).map((g) => `${g.name} ${money(Number(g.current_amount))} de ${money(Number(g.target_amount))}${g.deadline ? ` até ${g.deadline}` : ''} (${sp(g.space_id)})`).join('; ') : 'nenhuma'}.`,
     `Últimos lançamentos (mais novo primeiro): ${((recent.data ?? []) as any[]).map((t) => `[id ${t.id}] ${t.occurred_on} ${t.kind === 'income' ? '+' : '-'}${money(Number(t.amount))} ${t.description}${t.installment_total ? ` ${t.installment_no}/${t.installment_total}` : ''} · ${t.categories?.name ?? 'sem categoria'}${t.accounts?.name ? ` · ${t.accounts.name}` : ''} · ${sp(t.space_id)}`).join(' | ') || 'nenhum'}.`,
     `Memória (o que você já sabe sobre eles): ${((memory.data ?? []) as any[]).map((m) => `[${m.id}] ${m.fact}${m.space_id === ctx.casal.id ? '' : ' (pessoal)'}`).join(' | ') || 'nada ainda'}.`,
@@ -441,15 +502,11 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       );
     }
     case 'apagar_lancamento': {
-      await ensureSchema();
-      const { data: found } = await db.from('transactions').select('id, installment_group').eq('id', String(input.lancamento_id)).maybeSingle();
-      if (!found) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
-      const q = db.from('transactions').delete();
-      const { data, error } = await (found.installment_group ? q.eq('installment_group', found.installment_group) : q.eq('id', found.id)).select('description, amount');
-      if (error) throw new Error(error.message);
-      const total = (data ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
-      actions.push({ kind: 'deleted', title: `${data?.[0]?.description ?? 'Lançamento'} apagado`, sub: (data?.length ?? 0) > 1 ? `${data!.length} parcelas desfeitas` : 'Lançamento desfeito', amount: Math.round(total * 100) / 100 });
-      return JSON.stringify({ ok: true, apagados: data?.length ?? 0 });
+      const data = await deleteTransaction(db, String(input.lancamento_id));
+      if (!data.length) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
+      const total = data.reduce((s: number, r: any) => s + Number(r.amount), 0);
+      actions.push({ kind: 'deleted', title: `${data[0].description} apagado`, sub: data.length > 1 ? `${data.length} parcelas desfeitas` : 'Lançamento desfeito', amount: Math.round(total * 100) / 100 });
+      return JSON.stringify({ ok: true, apagados: data.length });
     }
     case 'parcelar_lancamento': {
       const n = Math.floor(Number(input.parcelas));
@@ -466,34 +523,14 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       return JSON.stringify({ ok: true, parcelas: n, valor_parcela: tx.installment_amount });
     }
     case 'editar_lancamento': {
-      await ensureSchema();
-      const { data: t } = await db.from('transactions').select('*').eq('id', String(input.lancamento_id)).maybeSingle();
-      if (!t) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
-      const patch: any = {};
-      if (input.descricao) patch.description = String(input.descricao);
-      if (input.categoria) patch.category_id = await categoryId(input.categoria, t.kind);
-      if (input.conta) patch.account_id = await accountId(input.conta);
-      if (input.espaco) patch.space_id = spaceId(input.espaco);
-      const group = t.installment_group as string | null;
-      if (group) {
-        if (Object.keys(patch).length) await db.from('transactions').update(patch).eq('installment_group', group);
-        if (input.valor || input.data) {
-          // refaz as parcelas com o novo total/data
-          const { data: parts } = await db.from('transactions').select('id, amount, occurred_on, installment_no').eq('installment_group', group).order('installment_no');
-          const n = parts?.length ?? t.installment_total;
-          const total = input.valor ? Number(input.valor) : (parts ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
-          const first = input.data || parts?.[0]?.occurred_on || t.occurred_on;
-          const cents = Math.round(total * 100), base = Math.floor(cents / n);
-          await Promise.all((parts ?? []).map((p: any, i: number) =>
-            db.from('transactions').update({ amount: (i === n - 1 ? cents - base * (n - 1) : base) / 100, occurred_on: addMonths(first, i) }).eq('id', p.id),
-          ));
-        }
-      } else {
-        if (input.valor) patch.amount = Math.round(Number(input.valor) * 100) / 100;
-        if (input.data) patch.occurred_on = String(input.data);
-        const { error } = await db.from('transactions').update(patch).eq('id', t.id);
-        if (error) throw new Error(error.message);
-      }
+      const t = await updateTransaction(db, String(input.lancamento_id), {
+        amount: input.valor ? Number(input.valor) : undefined,
+        description: input.descricao ? String(input.descricao) : undefined,
+        categoryId: input.categoria ? await categoryId(input.categoria, input.tipo === 'receita' ? 'income' : 'expense') : undefined,
+        accountId: input.conta ? await accountId(input.conta) : undefined,
+        occurredOn: input.data ? String(input.data) : undefined,
+        spaceId: input.espaco ? spaceId(input.espaco) : undefined,
+      });
       actions.push({ kind: 'transaction', title: `${input.descricao ?? t.description} corrigido`, sub: 'Lançamento atualizado', amount: input.valor ? Number(input.valor) : Number(t.amount), income: t.kind === 'income' });
       return JSON.stringify({ ok: true });
     }
@@ -509,6 +546,52 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       const { error } = await db.from('jarbas_memory').delete().eq('id', String(input.memoria_id));
       if (error) throw new Error(error.message);
       return JSON.stringify({ ok: true });
+    }
+    case 'editar_conta_a_pagar': {
+      await ensureSchema();
+      const patch: any = {};
+      if (input.nome) patch.name = String(input.nome);
+      if (input.valor) patch.amount = Math.round(Number(input.valor) * 100) / 100;
+      if (input.vencimento) patch.due_date = String(input.vencimento);
+      if (input.recorrencia) patch.recurrence = String(input.recorrencia);
+      if (input.avisar_dias_antes != null) patch.remind_days = Math.max(0, Math.min(15, Number(input.avisar_dias_antes)));
+      const { data, error } = await db.from('bills').update(patch).eq('id', String(input.conta_id)).select('name, amount, due_date').maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return JSON.stringify({ ok: false, erro: 'Conta não encontrada' });
+      actions.push({ kind: 'bill', title: `${data.name} atualizada`, sub: `Vence ${longDate(data.due_date)}`, amount: Number(data.amount) });
+      return JSON.stringify({ ok: true });
+    }
+    case 'apagar_conta_a_pagar': {
+      const { data, error } = await db.from('bills').delete().eq('id', String(input.conta_id)).select('name, amount').maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) return JSON.stringify({ ok: false, erro: 'Conta não encontrada' });
+      actions.push({ kind: 'deleted', title: `${data.name} excluída`, sub: 'Conta a pagar removida', amount: Number(data.amount) });
+      return JSON.stringify({ ok: true });
+    }
+    case 'ver_investimentos': {
+      const inv = await listInvestments(db);
+      return JSON.stringify({
+        total_atual: inv.current, total_aplicado: inv.invested, rendimento: inv.gain, rendimento_pct: inv.gainPct,
+        itens: inv.items.map((i: any) => ({ id: i.id, nome: i.name, tipo: INV_KINDS[i.kind] ?? i.kind, onde: i.institution, titular: i.owner_name, aplicado: i.invested, atual: i.current_value, atualizado_em: String(i.updated_at).slice(0, 10) })),
+      });
+    }
+    case 'registrar_investimento': {
+      const it = await addInvestment(db, {
+        spaceId: ctx.casal.id, name: String(input.nome), kind: input.tipo, institution: input.instituicao ?? null,
+        owner: input.titular ?? ctx.name.split(' ')[0], invested: Number(input.valor_aplicado), current: input.valor_atual ? Number(input.valor_atual) : null,
+      });
+      actions.push({ kind: 'goal', title: it.name, sub: `Investimento · ${[it.institution, it.owner_name].filter(Boolean).join(' · ')}`, amount: Number(it.current_value) });
+      return JSON.stringify({ ok: true, id: it.id });
+    }
+    case 'movimentar_investimento': {
+      const inv = await listInvestments(db);
+      const q = norm(String(input.investimento ?? ''));
+      const hit = inv.items.find((i: any) => i.id === input.investimento) ?? inv.items.find((i: any) => norm(i.name) === q) ?? inv.items.find((i: any) => norm(i.name).includes(q) || q.includes(norm(i.name)) || (i.institution && q.includes(norm(i.institution))));
+      if (!hit) return JSON.stringify({ ok: false, erro: 'Investimento não encontrado', existentes: inv.items.map((i: any) => i.name) });
+      const after = await moveInvestment(db, hit.id, input.tipo, Number(input.valor), input.data);
+      const label = input.tipo === 'aporte' ? 'Aporte' : input.tipo === 'resgate' ? 'Resgate' : 'Valor atualizado';
+      actions.push({ kind: 'goal', title: `${hit.name} · ${label}`, sub: `Agora vale ${brl(after.current_value)}`, amount: Number(input.valor) });
+      return JSON.stringify({ ok: true, valor_atual: after.current_value, aplicado: after.invested });
     }
     case 'definir_orcamento': {
       const cat = await categoryId(input.categoria, 'expense');

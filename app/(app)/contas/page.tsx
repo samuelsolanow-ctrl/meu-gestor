@@ -13,15 +13,17 @@ function BillRow({ b, today }: { b: any; today: string }) {
   const tone = d.tone === 'late' ? 'late' : d.tone === 'soon' ? 'warn' : '';
   return (
     <div className="item">
-      <div className={`item-icon ${tone}`}>{b.name.charAt(0)}</div>
-      <div className="grow">
-        <div className="item-title">{b.name}</div>
-        <div className={`item-sub ${tone}`}>
-          {d.text}
-          {b.recurrence === 'monthly' ? ' · todo mês' : b.recurrence === 'yearly' ? ' · todo ano' : ''}
+      <Link href={`/contas/${b.id}`} className="row grow bill-link" aria-label={`Editar ${b.name}`}>
+        <div className={`item-icon ${tone}`}>{b.name.charAt(0)}</div>
+        <div className="grow">
+          <div className="item-title">{b.name}</div>
+          <div className={`item-sub ${tone}`}>
+            {d.text}
+            {b.recurrence === 'monthly' ? ' · todo mês' : b.recurrence === 'yearly' ? ' · todo ano' : ''}
+          </div>
         </div>
-      </div>
-      <span className="amount">{brl(b.amount)}</span>
+        <span className="amount">{brl(b.amount)}</span>
+      </Link>
       <form action={payBillAction}>
         <input type="hidden" name="id" value={b.id} />
         <PayButton name={b.name} />
@@ -93,17 +95,17 @@ export default async function ContasPage({ searchParams }: { searchParams: Promi
 
       {(paid ?? []).length > 0 && (
         <section className="stack" style={{ gap: 8 }} aria-label="Pagas este mês">
-          <h2 className="section-label">Pagas este mês</h2>
-          <div className="card list" style={{ padding: '4px 14px' }}>
+          <h2 className="section-label">Pagas este mês · {(paid ?? []).length} {(paid ?? []).length === 1 ? 'conta' : 'contas'} · {brl((paid ?? []).reduce((s: number, b: any) => s + Number(b.amount), 0))}</h2>
+          <div className="card list paid-list" style={{ padding: '4px 14px' }}>
             {(paid ?? []).map((b: any) => (
-              <div className="item" key={b.id}>
-                <div className="item-icon income"><IconCheck /></div>
+              <Link href={`/contas/${b.id}`} className="item paid-row" key={b.id} aria-label={`${b.name}, paga`}>
+                <div className="item-icon paid"><IconCheck /></div>
                 <div className="grow">
-                  <div className="item-title" style={{ color: '#7d8aa8', textDecoration: 'line-through' }}>{b.name}</div>
-                  <div className="item-sub">Paga</div>
+                  <div className="item-title">{b.name}</div>
+                  <div className="item-sub paid-text">Paga{b.paid_at ? ` em ${String(b.paid_at).slice(8, 10)}/${String(b.paid_at).slice(5, 7)}` : ''}</div>
                 </div>
-                <span className="amount" style={{ color: '#7d8aa8' }}>{brl(b.amount)}</span>
-              </div>
+                <span className="amount paid-text">{brl(b.amount)}</span>
+              </Link>
             ))}
           </div>
         </section>

@@ -189,7 +189,7 @@ export default async function CartoesPage({ searchParams }: { searchParams: Prom
         ) : (
           <div className="list">
             {inv.items.map((t) => (
-              <div className="item" key={t.id}>
+              <Link href={`/lancamento/${t.id}?voltar=${encodeURIComponent(`/cartoes?c=${card.id}&f=${key}`)}`} className="item tx-link" key={t.id}>
                 <div className={`item-icon ${t.kind === 'income' ? 'income' : ''}`}>{t.description.charAt(0)}</div>
                 <div className="grow">
                   <div className="item-title">
@@ -199,7 +199,7 @@ export default async function CartoesPage({ searchParams }: { searchParams: Prom
                   <div className="item-sub">{ddmm(t.occurred_on)} · {t.categories?.name ?? 'Sem categoria'}</div>
                 </div>
                 <span className={`amount ${t.kind === 'income' ? 'income' : ''}`}>{t.kind === 'income' ? '−' : ''}{brl(t.amount)}</span>
-              </div>
+              </Link>
             ))}
           </div>
         )}

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pushToUser, serviceClient } from '@/lib/push';
-import { addDays, brl, dueLabel, todaySP } from '@/lib/format';
+import { addDays, brl, daysBetween, dueLabel, todaySP } from '@/lib/format';
+import { ensureSchema } from '@/lib/migrate';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -22,6 +23,7 @@ export async function GET(req: Request) {
   if (!authorized(req)) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
   const slot = new URL(req.url).searchParams.get('slot') === 'noite' ? 'noite' : 'manha';
 
+  await ensureSchema();
   const db = serviceClient();
   const today = todaySP();
   const startOfDay = `${today}T00:00:00-03:00`;
@@ -63,18 +65,20 @@ export async function GET(req: Request) {
     let chat = '';
 
     if (slot === 'manha') {
-      const { data: bills } = await db
+      // Cada conta avisa com a antecedência escolhida (padrão 2 dias), no dia e enquanto estiver atrasada
+      const { data: upcoming } = await db
         .from('bills')
-        .select('name, amount, due_date')
+        .select('name, amount, due_date, recurrence, remind_days')
         .in('space_id', spaceIds)
         .eq('status', 'open')
-        .lte('due_date', addDays(today, 1))
+        .lte('due_date', addDays(today, 15))
         .order('due_date');
+      const bills = (upcoming ?? []).filter((b: any) => daysBetween(today, b.due_date) <= Number(b.remind_days ?? 2));
       if (!bills?.length) {
         report.push({ userId, skipped: 'sem contas' });
         continue;
       }
-      const lines = bills.map((b: any) => `${b.name}: ${dueLabel(b.due_date, today).text.toLowerCase()} (${brl(b.amount)})`);
+      const lines = bills.map((b: any) => `${b.name}${b.recurrence === 'monthly' ? ' (mensal)' : ''}: ${dueLabel(b.due_date, today).text.toLowerCase()} (${brl(b.amount)})`);
       const total = bills.reduce((s: number, b: any) => s + Number(b.amount), 0);
       title = bills.length === 1 ? `Jarbas · ${bills[0].name}` : `Jarbas · ${bills.length} contas pedem atenção`;
       body = bills.length === 1 ? `${lines[0]}. Já pagou?` : `${lines.slice(0, 3).join('; ')}${bills.length > 3 ? '…' : ''}. Total ${brl(total)}.`;

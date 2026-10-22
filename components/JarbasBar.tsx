@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { IconMic, IconSend, IconStop } from './icons';
-import { unlockAudio } from '@/lib/voice';
+import { unlockAudio, unlockBrowserVoice } from '@/lib/voice';
 
 // Mesma "escuta" do chat (o iPhone pede o microfone uma vez por uso)
 function getRecognition(): any | null {
@@ -15,7 +15,11 @@ function getRecognition(): any | null {
   return w.__mgRec;
 }
 
-const unlockSpeech = () => unlockAudio();
+const unlockSpeech = () => {
+  unlockAudio();
+  unlockBrowserVoice();
+};
+const unlockForMic = () => unlockAudio(true);
 
 const SUGGESTIONS = ['Gastei 50 no mercado', 'Me lembra às 15h', 'Resumo do mês'];
 
@@ -34,10 +38,11 @@ export default function JarbasBar({ tip }: { tip: string }) {
 
   function listen() {
     if (listening) {
+      if (recRef.current) recRef.current.__userStop = true;
       recRef.current?.stop();
       return;
     }
-    unlockSpeech();
+    unlockForMic();
     const rec = getRecognition();
     if (!rec) {
       setHint('Use o microfone do teclado para ditar.');
@@ -50,6 +55,9 @@ export default function JarbasBar({ tip }: { tip: string }) {
     rec.continuous = true;
     let heard = '';
     let silence: any = null;
+    let startedAt = Date.now();
+    let retried = false;
+    let fatal = false;
     const arm = () => {
       clearTimeout(silence);
       silence = setTimeout(() => {
@@ -66,15 +74,27 @@ export default function JarbasBar({ tip }: { tip: string }) {
       setText(heard);
     };
     rec.onerror = (e: any) => {
+      if (e?.error === 'aborted' || e?.error === 'no-speech') return;
+      fatal = true;
       setListening(false);
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') setHint('Libere o microfone em Ajustes › Apps › Safari.');
     };
     rec.onend = () => {
       clearTimeout(silence);
+      if (!heard && !fatal && !retried && !rec.__userStop && Date.now() - startedAt < 1500) {
+        retried = true; // iPhone às vezes fecha no primeiro toque: reabre sozinho
+        startedAt = Date.now();
+        try {
+          rec.start();
+          return;
+        } catch {}
+      }
+      rec.__userStop = false;
       setListening(false);
       if (heard) go(heard);
     };
     try {
+      rec.__userStop = false;
       rec.start();
       setListening(true);
       setHint('');

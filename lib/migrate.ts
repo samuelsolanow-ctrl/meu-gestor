@@ -2,7 +2,7 @@ import { appOrigin, cronKey } from '@/lib/secrets';
 
 // O próprio app atualiza a estrutura do banco quando precisa.
 // Usa a conexão direta POSTGRES_URL que a integração Supabase + Vercel já criou.
-const VERSION = 3;
+const VERSION = 4;
 
 let running: Promise<void> | null = null;
 
@@ -72,6 +72,24 @@ async function migrate() {
         using (exists (select 1 from public.accounts a where a.id = account_id and public.can_access_space(a.space_id)))
         with check (exists (select 1 from public.accounts a where a.id = account_id and public.can_access_space(a.space_id)));
       grant select, insert, update, delete on public.card_invoices to authenticated;
+    `);
+
+    // v4 → memória do Jarbas (fatos que a pessoa contou)
+    await sql.unsafe(`
+      create table if not exists public.jarbas_memory (
+        id          uuid primary key default gen_random_uuid(),
+        space_id    uuid not null references public.spaces(id) on delete cascade,
+        user_id     uuid references public.profiles(id) on delete set null default auth.uid(),
+        fact        text not null,
+        created_at  timestamptz not null default now()
+      );
+      create index if not exists jarbas_memory_space on public.jarbas_memory(space_id, created_at desc);
+      alter table public.jarbas_memory enable row level security;
+      drop policy if exists jarbas_memory_all on public.jarbas_memory;
+      create policy jarbas_memory_all on public.jarbas_memory for all to authenticated
+        using (public.can_access_space(space_id))
+        with check (public.can_access_space(space_id));
+      grant select, insert, update, delete on public.jarbas_memory to authenticated;
     `);
 
     // v2 → agendador do banco chama os lembretes a cada minuto

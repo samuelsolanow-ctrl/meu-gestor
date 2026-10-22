@@ -8,7 +8,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const MODEL = process.env.JARBAS_MODEL || 'claude-sonnet-5-5';
-const MAX_STEPS = 6;
+const MAX_STEPS = 8;
+// Busca na internet (cotações, Selic, notícias). Desligue com JARBAS_WEB=0.
+const WEB_SEARCH = { type: 'web_search_20250305', name: 'web_search', max_uses: 3, user_location: { type: 'approximate', country: 'BR', region: 'São Paulo', timezone: 'America/Sao_Paulo' } };
 
 // Tools com cache: a parte fixa (ferramentas + instruções) é reaproveitada entre mensagens
 const TOOLS_CACHED = TOOLS.map((t, i) => (i === TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t));
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
 
   // Tudo em paralelo: histórico, contexto do Jarbas e salvar a mensagem
   const [{ data: history }, system] = await Promise.all([
-    db.from('chat_messages').select('role, content').eq('user_id', ctx.userId).order('created_at', { ascending: false }).limit(20),
+    db.from('chat_messages').select('role, content').eq('user_id', ctx.userId).order('created_at', { ascending: false }).limit(30),
     buildSystem(ctx),
     db.from('chat_messages').insert({ space_id: ctx.casal.id, user_id: ctx.userId, role: 'user', content: attachNote + text }),
   ]);
@@ -71,23 +73,41 @@ export async function POST(req: Request) {
       const send = (o: any) => controller.enqueue(encoder.encode(JSON.stringify(o) + '\n'));
       const actions: ChatAction[] = [];
       let reply = '';
+      let useWeb = process.env.JARBAS_WEB !== '0';
       try {
         for (let step = 0; step < MAX_STEPS; step++) {
           let stepText = '';
-          const s: any = anthropic.messages.stream({
-            model: MODEL,
-            max_tokens: 800,
-            system: system as any,
-            tools: TOOLS_CACHED as any,
-            messages,
-          });
-          s.on('text', (d: string) => {
-            if (!stepText && reply) send({ t: 'text', d: ' ' });
-            stepText += d;
-            send({ t: 'text', d });
-          });
-          const msg: any = await s.finalMessage();
+          let msg: any;
+          try {
+            const s: any = anthropic.messages.stream({
+              model: MODEL,
+              max_tokens: 1000,
+              system: system as any,
+              tools: (useWeb ? [...TOOLS_CACHED, WEB_SEARCH] : TOOLS_CACHED) as any,
+              messages,
+            });
+            s.on('text', (d: string) => {
+              if (!stepText && reply) send({ t: 'text', d: ' ' });
+              stepText += d;
+              send({ t: 'text', d });
+            });
+            msg = await s.finalMessage();
+          } catch (e: any) {
+            // conta sem busca na internet liberada: segue sem ela
+            if (useWeb && e?.status === 400 && !stepText && /web_search|server tool|tool/i.test(String(e?.message))) {
+              useWeb = false;
+              step--;
+              continue;
+            }
+            throw e;
+          }
           reply += (reply && stepText ? ' ' : '') + stepText;
+
+          // busca longa na internet: o modelo pede para continuar
+          if (msg.stop_reason === 'pause_turn') {
+            messages.push({ role: 'assistant', content: msg.content });
+            continue;
+          }
 
           const toolUses = msg.content.filter((b: any) => b.type === 'tool_use');
           if (msg.stop_reason !== 'tool_use' || toolUses.length === 0) break;

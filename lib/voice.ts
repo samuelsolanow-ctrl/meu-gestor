@@ -57,19 +57,27 @@ export function cleanForSpeech(text: string) {
     .trim();
 }
 
-/** Chamar dentro de um toque (enviar, microfone): libera o áudio no iPhone. */
-export function unlockAudio() {
+/** Chamar dentro de um toque (enviar, microfone): libera o áudio do app no iPhone. */
+export function unlockAudio(forMic = false) {
   try {
     const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (AC) {
       ctx = ctx || new AC();
       ctx!.resume?.();
+      if (forMic) return; // tocar qualquer som agora atrapalha o microfone
       const b = ctx!.createBuffer(1, 1, 22050);
       const s = ctx!.createBufferSource();
       s.buffer = b;
       s.connect(ctx!.destination);
       s.start(0);
     }
+  } catch {}
+}
+
+/** Prepara a voz do iPhone (só quando NÃO vai abrir o microfone: ela derruba a escuta). */
+export function unlockBrowserVoice() {
+  try {
+    if (serverVoice === true) return;
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     window.speechSynthesis?.speak(u);

@@ -1,6 +1,6 @@
 import type { AppContext } from '@/lib/context';
 import { addBill, addTransaction, monthSummary, payBill } from '@/lib/finance';
-import { brl, longDate, todaySP } from '@/lib/format';
+import { addDays, addMonths, brl, longDate, monthName, monthRange, todaySP } from '@/lib/format';
 import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
 import { ensureSchema } from '@/lib/migrate';
 import { invoiceToPay, loadCardData, type Card } from '@/lib/cards';
@@ -10,7 +10,7 @@ import { getBudgets, setBudget } from '@/lib/budget';
 export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
 
 /** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
-export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento']);
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -97,6 +97,33 @@ export const TOOLS = [
     name: 'parcelar_lancamento',
     description: 'Transforma um lançamento já feito à vista em compra parcelada (ex.: lançou 4100 mas foi em 10x). Mantém data, cartão e categoria.',
     input_schema: { type: 'object', properties: { lancamento_id: { type: 'string' }, parcelas: { type: 'integer' } }, required: ['lancamento_id', 'parcelas'] },
+  },
+  {
+    name: 'editar_lancamento',
+    description: 'Corrige um lançamento já feito: valor, descrição, categoria, data, conta/cartão ou espaço. Envie só o que muda. Em compra parcelada, valor = novo TOTAL e muda todas as parcelas.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        lancamento_id: { type: 'string' },
+        valor: { type: 'number' },
+        descricao: { type: 'string' },
+        categoria: { type: 'string' },
+        data: { type: 'string', description: 'AAAA-MM-DD' },
+        conta: { type: 'string' },
+        espaco: { type: 'string', enum: ['casal', 'pessoal'] },
+      },
+      required: ['lancamento_id'],
+    },
+  },
+  {
+    name: 'lembrar',
+    description: 'Guarda na memória um fato duradouro que a pessoa contou e que ajuda no futuro (salário cai dia 5, aluguel é 2.000, mercado preferido, plano de trocar de carro, preferências). Não use para gastos (isso é lançamento) nem compromissos (isso é agenda).',
+    input_schema: { type: 'object', properties: { fato: { type: 'string', description: 'Frase curta e objetiva' }, espaco: { type: 'string', enum: ['casal', 'pessoal'], description: 'pessoal se for algo só da pessoa' } }, required: ['fato'] },
+  },
+  {
+    name: 'esquecer',
+    description: 'Apaga um fato da memória (use o id da lista de memória).',
+    input_schema: { type: 'object', properties: { memoria_id: { type: 'string' } }, required: ['memoria_id'] },
   },
   {
     name: 'definir_orcamento',
@@ -209,6 +236,15 @@ Como agir:
 - Mensagens por ditado de voz vêm com erros ("pics" = Pix, números por extenso, sem pontuação). Entenda pelo sentido e pelo histórico ("muda pra 16h", "apaga esse" se referem ao que acabou de ser dito). Só pergunte se for impossível deduzir.
 - Fotos e PDFs anexados: leia com atenção. Nota fiscal ou comprovante → registrar_lancamento com valor, local e data do documento. Boleto ou fatura → criar_conta_a_pagar com valor e vencimento. Outro documento → resuma o que importa em poucas palavras ou responda o que a pessoa perguntou sobre ele.
 
+INTELIGÊNCIA (é o que faz você valer a pena):
+- Você já recebe abaixo um RETRATO atualizado das finanças, agenda e memória. Use-o para responder na hora, sem chamar ferramenta, sempre que ele bastar. Use ferramentas para gravar, corrigir ou quando precisar de detalhe que não está no retrato.
+- Entenda a intenção, não só as palavras. "Dá pra eu comprar um tênis de 600?" → olhe saldo previsto do fim do mês, orçamento da categoria e faturas que vêm por aí, e responda sim/não com o motivo em uma frase. "Tô gastando muito?" → compare com orçamento e com o que entrou.
+- Correções ("não, foi 95", "era no cartão", "muda pra lazer", "esse foi pessoal") → editar_lancamento no lançamento que acabou de ser feito (o id está nos últimos lançamentos do retrato). Nunca crie um novo por cima.
+- Quando a pessoa contar algo duradouro sobre a vida financeira ou a rotina (salário, dia de pagamento, planos, preferências), guarde com lembrar, sem anunciar. Use a memória para personalizar e não pergunte o que já sabe.
+- Faça contas com cuidado (parcelas, sobra, quanto falta para a meta, quanto por mês para chegar lá).
+- Para cotações, juros, Selic, CDI, dólar, notícias ou qualquer coisa do mundo real que mude com o tempo, use web_search. Não invente números do mercado. Investimentos: explique e compare de forma prática; não recomende comprar um papel específico como certeza.
+- Seja proativo quando fizer diferença: se ao lançar notar que uma categoria estourou, que uma fatura vence amanhã ou que um compromisso conflita, diga em poucas palavras.
+
 ESTILO (muito importante):
 - Seja direto ao ponto. Responda só o que foi pedido, sem introdução, sem rodeio, sem repetir o que a pessoa disse, sem oferecer ajuda extra ("quer que eu…?", "posso ajudar em algo mais?").
 - Antes de CONSULTAR dados (listar, resumo), não escreva nada: chame a ferramenta e responda só com o resultado.
@@ -220,13 +256,53 @@ ESTILO (muito importante):
 export async function buildSystem(ctx: AppContext) {
   const db = ctx.supabase;
   const now = new Date();
-  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }] = await Promise.all([
-    db.from('categories').select('name, kind').order('name'),
-    db.from('accounts').select('name, type, institution, space_id').eq('archived', false),
-    db.from('profiles').select('id, display_name'),
-    db.from('events').select('title, starts_at').gte('starts_at', now.toISOString()).lte('starts_at', new Date(now.getTime() + 3 * 86_400_000).toISOString()).order('starts_at').limit(12),
-  ]);
   const today = todaySP();
+  const safe = <T,>(p: Promise<T>, fb: T) => p.catch(() => fb);
+  const [{ data: cats }, { data: accounts }, { data: members }, { data: agenda }, famMonth, myMonth, famBudget, bills, recent, goals, memory, prevMonth] = await Promise.all([
+    db.from('categories').select('name, kind').order('name'),
+    db.from('accounts').select('id, name, type, institution, space_id, closing_day, due_day, credit_limit').eq('archived', false),
+    db.from('profiles').select('id, display_name'),
+    db.from('events').select('title, starts_at').gte('starts_at', now.toISOString()).lte('starts_at', new Date(now.getTime() + 7 * 86_400_000).toISOString()).order('starts_at').limit(15),
+    safe(monthSummary(db, ctx.casal.id, today), null),
+    safe(monthSummary(db, ctx.pessoal.id, today), null),
+    safe(getBudgets(db, ctx.casal.id, today), []),
+    db.from('bills').select('name, amount, due_date, space_id').eq('status', 'open').lte('due_date', addDays(today, 20)).order('due_date').limit(12),
+    db.from('transactions').select('id, kind, amount, description, occurred_on, space_id, installment_no, installment_total, categories(name), accounts(name)').order('created_at', { ascending: false }).limit(10),
+    db.from('goals').select('name, target_amount, current_amount, deadline, space_id').order('created_at'),
+    db.from('jarbas_memory').select('id, fact, space_id').order('created_at', { ascending: false }).limit(60),
+    safe(monthSummary(db, ctx.casal.id, addMonths(today, -1)), null),
+  ]);
+  const cardRows = ((accounts ?? []) as any[]).filter((a) => a.type === 'credit_card');
+  const cardData = await safe(loadCardData(db, cardRows as Card[], today), new Map() as any);
+  const sp = (id: string) => (id === ctx.casal.id ? 'Família' : 'pessoal');
+  const money = (n: number) => brl(n);
+  const monthLine = (m: any) => (m ? `entrou ${money(m.income)}, saiu ${money(m.expense)}, saldo ${money(m.balance)}${m.categories.length ? `; por categoria: ${m.categories.slice(0, 6).map((c: any) => `${c.name} ${money(c.total)}`).join(', ')}` : ''}` : 'sem dados');
+  const billsOpen = (bills.data ?? []) as any[];
+  const famBillsLeft = billsOpen.filter((b) => b.space_id === ctx.casal.id && b.due_date <= monthRange(today).end).reduce((s, b) => s + Number(b.amount), 0);
+  const snapshot = [
+    `RETRATO (atualizado agora):`,
+    `Família em ${monthName(today)}: ${monthLine(famMonth)}. Previsto no fim do mês (descontando contas a vencer): ${famMonth ? money(famMonth.balance - famBillsLeft) : '?'}.`,
+    `Mês passado na Família: ${monthLine(prevMonth)}.`,
+    `Pessoal de ${ctx.name.split(' ')[0]} em ${monthName(today)}: ${monthLine(myMonth)}.`,
+    `Orçamento da Família: ${famBudget.length ? famBudget.map((b) => `${b.name} ${money(b.spent)} de ${money(b.limit)}`).join('; ') : 'nenhum limite definido'}.`,
+    `Cartões: ${
+      cardRows.length
+        ? cardRows
+            .map((c) => {
+              const d = cardData.get(c.id);
+              if (!d) return c.name;
+              const inv = invoiceToPay(d.invoices, d.current);
+              const next = [...d.invoices.values()].filter((i: any) => i.key > d.current && i.total > 0).slice(0, 3).map((i: any) => `${i.key} ${money(i.total)}`).join(', ');
+              return `${c.name} (${sp(c.space_id)}): fatura ${inv.key} ${money(inv.total)} ${inv.status}, vence ${inv.dueOn}${c.credit_limit ? `, limite disponível ${money(Number(c.credit_limit) - d.used)} de ${money(Number(c.credit_limit))}` : ''}${next ? `; próximas: ${next}` : ''}`;
+            })
+            .join(' | ')
+        : 'nenhum cadastrado'
+    }.`,
+    `Contas a pagar (próx. 20 dias): ${billsOpen.length ? billsOpen.map((b) => `${b.name} ${money(Number(b.amount))} vence ${b.due_date} (${sp(b.space_id)})`).join('; ') : 'nenhuma'}.`,
+    `Metas: ${(goals.data ?? []).length ? (goals.data as any[]).map((g) => `${g.name} ${money(Number(g.current_amount))} de ${money(Number(g.target_amount))}${g.deadline ? ` até ${g.deadline}` : ''} (${sp(g.space_id)})`).join('; ') : 'nenhuma'}.`,
+    `Últimos lançamentos (mais novo primeiro): ${((recent.data ?? []) as any[]).map((t) => `[id ${t.id}] ${t.occurred_on} ${t.kind === 'income' ? '+' : '-'}${money(Number(t.amount))} ${t.description}${t.installment_total ? ` ${t.installment_no}/${t.installment_total}` : ''} · ${t.categories?.name ?? 'sem categoria'}${t.accounts?.name ? ` · ${t.accounts.name}` : ''} · ${sp(t.space_id)}`).join(' | ') || 'nenhum'}.`,
+    `Memória (o que você já sabe sobre eles): ${((memory.data ?? []) as any[]).map((m) => `[${m.id}] ${m.fact}${m.space_id === ctx.casal.id ? '' : ' (pessoal)'}`).join(' | ') || 'nada ainda'}.`,
+  ].join('\n');
   const weekday = WEEKDAYS[new Date(Date.parse(today + 'T12:00:00Z')).getUTCDay()];
   const others = (members ?? []).filter((m: any) => m.id !== ctx.userId).map((m: any) => m.display_name);
   const expense = (cats ?? []).filter((c: any) => c.kind === 'expense').map((c: any) => c.name).join(', ');
@@ -241,7 +317,9 @@ Agora: ${weekday}, ${longDate(today)}, ${localIso(now).slice(11)} (${localIso(no
 Categorias de despesa: ${expense || '(nenhuma)'}.
 Categorias de receita: ${income || '(nenhuma)'}.
 Contas e cartões: ${accs || 'nenhum ainda (pode lançar sem conta)'}.
-Agenda dos próximos 3 dias: ${proximos || 'nada marcado'}.`;
+Agenda dos próximos 7 dias: ${proximos || 'nada marcado'}.
+
+${snapshot}`;
 
   return [
     { type: 'text', text: STATIC_PROMPT, cache_control: { type: 'ephemeral' } },
@@ -386,6 +464,51 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       await db.from('transactions').delete().eq('id', t.id);
       actions.push({ kind: 'transaction', title: t.description, sub: `Agora em ${n}x de ${brl(tx.installment_amount)}`, amount: Number(t.amount) });
       return JSON.stringify({ ok: true, parcelas: n, valor_parcela: tx.installment_amount });
+    }
+    case 'editar_lancamento': {
+      await ensureSchema();
+      const { data: t } = await db.from('transactions').select('*').eq('id', String(input.lancamento_id)).maybeSingle();
+      if (!t) return JSON.stringify({ ok: false, erro: 'Lançamento não encontrado' });
+      const patch: any = {};
+      if (input.descricao) patch.description = String(input.descricao);
+      if (input.categoria) patch.category_id = await categoryId(input.categoria, t.kind);
+      if (input.conta) patch.account_id = await accountId(input.conta);
+      if (input.espaco) patch.space_id = spaceId(input.espaco);
+      const group = t.installment_group as string | null;
+      if (group) {
+        if (Object.keys(patch).length) await db.from('transactions').update(patch).eq('installment_group', group);
+        if (input.valor || input.data) {
+          // refaz as parcelas com o novo total/data
+          const { data: parts } = await db.from('transactions').select('id, amount, occurred_on, installment_no').eq('installment_group', group).order('installment_no');
+          const n = parts?.length ?? t.installment_total;
+          const total = input.valor ? Number(input.valor) : (parts ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+          const first = input.data || parts?.[0]?.occurred_on || t.occurred_on;
+          const cents = Math.round(total * 100), base = Math.floor(cents / n);
+          await Promise.all((parts ?? []).map((p: any, i: number) =>
+            db.from('transactions').update({ amount: (i === n - 1 ? cents - base * (n - 1) : base) / 100, occurred_on: addMonths(first, i) }).eq('id', p.id),
+          ));
+        }
+      } else {
+        if (input.valor) patch.amount = Math.round(Number(input.valor) * 100) / 100;
+        if (input.data) patch.occurred_on = String(input.data);
+        const { error } = await db.from('transactions').update(patch).eq('id', t.id);
+        if (error) throw new Error(error.message);
+      }
+      actions.push({ kind: 'transaction', title: `${input.descricao ?? t.description} corrigido`, sub: 'Lançamento atualizado', amount: input.valor ? Number(input.valor) : Number(t.amount), income: t.kind === 'income' });
+      return JSON.stringify({ ok: true });
+    }
+    case 'lembrar': {
+      await ensureSchema();
+      const fact = String(input.fato ?? '').trim().slice(0, 300);
+      if (!fact) return JSON.stringify({ ok: false });
+      const { error } = await db.from('jarbas_memory').insert({ space_id: input.espaco === 'pessoal' ? ctx.pessoal.id : ctx.casal.id, fact });
+      if (error) throw new Error(error.message);
+      return JSON.stringify({ ok: true });
+    }
+    case 'esquecer': {
+      const { error } = await db.from('jarbas_memory').delete().eq('id', String(input.memoria_id));
+      if (error) throw new Error(error.message);
+      return JSON.stringify({ ok: true });
     }
     case 'definir_orcamento': {
       const cat = await categoryId(input.categoria, 'expense');

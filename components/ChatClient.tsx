@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { IconCheck, IconClip, IconMic, IconSend, IconSpeaker, IconSpeakerOff, IconStop, IconX } from './icons';
-import { say, stopVoice, unlockAudio } from '@/lib/voice';
+import { say, stopVoice, unlockAudio, unlockBrowserVoice } from '@/lib/voice';
 
 type Action = { kind: string; title: string; sub: string; amount?: number; income?: boolean };
 type Msg = { id: string; role: 'user' | 'assistant' | 'action'; content: string; action?: Action; thumbs?: string[] };
@@ -61,7 +61,11 @@ const speak = (text: string, queue = false) => {
   if (!queue) stopVoice();
   say(text);
 };
-const unlockSpeech = () => unlockAudio();
+const unlockSpeech = () => {
+  unlockAudio();
+  unlockBrowserVoice();
+};
+const unlockForMic = () => unlockAudio(true);
 
 export default function ChatClient({ initial, firstName, initialQuery }: { initial: { id: string; role: 'user' | 'assistant'; content: string }[]; firstName: string; initialQuery?: string }) {
   const router = useRouter();
@@ -221,10 +225,12 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
 
   function startListening() {
     if (listening) {
+      if (recRef.current) recRef.current.__userStop = true;
       recRef.current?.stop();
       return;
     }
-    if (voiceOnRef.current) unlockSpeech();
+    stopVoice();
+    unlockForMic();
     const rec = getRecognition();
     if (!rec) {
       setHint('Toque na caixa de texto e use o microfone do teclado para ditar.');
@@ -237,6 +243,9 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
     rec.continuous = true; // não para sozinho nas pausas
     let finalText = '';
     let lastHeard = '';
+    let startedAt = Date.now();
+    let retried = false;
+    let fatal = false;
     let silence: any = null;
     const armSilence = () => {
       clearTimeout(silence);
@@ -259,6 +268,8 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
       lastHeard = now;
     };
     rec.onerror = (e: any) => {
+      if (e?.error === 'aborted' || e?.error === 'no-speech') return; // onend decide se tenta de novo
+      fatal = true;
       setListening(false);
       if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
         setHint('Permita o microfone nos ajustes do iPhone, ou use o microfone do teclado.');
@@ -268,11 +279,22 @@ export default function ChatClient({ initial, firstName, initialQuery }: { initi
     };
     rec.onend = () => {
       clearTimeout(silence);
-      setListening(false);
       const said = (lastHeard || finalText).trim();
+      // iPhone às vezes fecha a escuta logo no primeiro toque: reabre sozinho uma vez
+      if (!said && !fatal && !retried && !recRef.current?.__userStop && Date.now() - startedAt < 1500) {
+        retried = true;
+        startedAt = Date.now();
+        try {
+          rec.start();
+          return;
+        } catch {}
+      }
+      if (recRef.current) recRef.current.__userStop = false;
+      setListening(false);
       if (said) send(said);
     };
     try {
+      rec.__userStop = false;
       rec.start();
       setListening(true);
       setHint('Pode falar… toque no quadrado para enviar.');

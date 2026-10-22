@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getContext, pickSpace } from '@/lib/context';
 import { brl, daysBetween, dueLabel, monthRange, todaySP } from '@/lib/format';
-import { payBillAction } from '../actions';
+import { payBillAction, unpayBillAction } from '../actions';
 import BillForm from '@/components/BillForm';
 import PayButton from '@/components/PayButton';
 import { IconCheck } from '@/components/icons';
@@ -98,14 +98,20 @@ export default async function ContasPage({ searchParams }: { searchParams: Promi
           <h2 className="section-label">Pagas este mês · {(paid ?? []).length} {(paid ?? []).length === 1 ? 'conta' : 'contas'} · {brl((paid ?? []).reduce((s: number, b: any) => s + Number(b.amount), 0))}</h2>
           <div className="card list paid-list" style={{ padding: '4px 14px' }}>
             {(paid ?? []).map((b: any) => (
-              <Link href={`/contas/${b.id}`} className="item paid-row" key={b.id} aria-label={`${b.name}, paga`}>
-                <div className="item-icon paid"><IconCheck /></div>
-                <div className="grow">
-                  <div className="item-title">{b.name}</div>
-                  <div className="item-sub paid-text">Paga{b.paid_at ? ` em ${String(b.paid_at).slice(8, 10)}/${String(b.paid_at).slice(5, 7)}` : ''}</div>
-                </div>
-                <span className="amount paid-text">{brl(b.amount)}</span>
-              </Link>
+              <div className="item paid-row" key={b.id}>
+                <Link href={`/contas/${b.id}`} className="row grow bill-link" aria-label={`${b.name}, paga. Abrir`}>
+                  <div className="item-icon paid"><IconCheck /></div>
+                  <div className="grow">
+                    <div className="item-title">{b.name}</div>
+                    <div className="item-sub paid-text">Paga{b.paid_at ? ` em ${String(b.paid_at).slice(8, 10)}/${String(b.paid_at).slice(5, 7)}` : ''}</div>
+                  </div>
+                  <span className="amount paid-text">{brl(b.amount)}</span>
+                </Link>
+                <form action={unpayBillAction}>
+                  <input type="hidden" name="id" value={b.id} />
+                  <button className="check on" aria-label={`Desmarcar ${b.name} como paga`}><span><IconCheck /></span></button>
+                </form>
+              </div>
             ))}
           </div>
         </section>

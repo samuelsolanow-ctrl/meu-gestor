@@ -2,7 +2,7 @@ import { appOrigin, cronKey } from '@/lib/secrets';
 
 // O próprio app atualiza a estrutura do banco quando precisa.
 // Usa a conexão direta POSTGRES_URL que a integração Supabase + Vercel já criou.
-const VERSION = 6;
+const VERSION = 7;
 
 let running: Promise<void> | null = null;
 
@@ -137,6 +137,11 @@ async function migrate() {
       insert into public.categories (family_id, name, kind, icon)
         select id, 'Bebê', 'expense', 'baby' from public.families
       on conflict do nothing;
+    `);
+
+    // v7 → lançamento sabe de qual conta paga veio (para poder desfazer)
+    await sql.unsafe(`
+      alter table public.transactions add column if not exists bill_id uuid references public.bills(id) on delete set null;
     `);
 
     // v2 → agendador do banco chama os lembretes a cada minuto

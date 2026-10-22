@@ -358,3 +358,6 @@ body { font-feature-settings: 'tnum' 1, 'cv11' 1; }
 .inv-on { background: var(--surface-2); border-radius: 12px; }
 .goal-edit summary::-webkit-details-marker { display: none; }
 .goal-edit[open] { padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+.unpay-btn { border: 1px solid var(--ok-line); background: transparent; color: var(--ok); border-radius: 999px; padding: 0 14px; min-height: 36px; font-weight: 700; font-size: 13px; cursor: pointer; }
+.check.on span { background: var(--ok); border-color: var(--ok); color: #06210f; display: grid; place-items: center; }

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { getContext } from '@/lib/context';
-import { addBill, addTransaction, deleteTransaction, payBill, updateTransaction } from '@/lib/finance';
+import { addBill, addTransaction, deleteTransaction, payBill, unpayBill, updateTransaction } from '@/lib/finance';
 import { addInvestment, kindFrom, moveInvestment } from '@/lib/investments';
 import { parseMoney, todaySP } from '@/lib/format';
 import { ensureSchema } from '@/lib/migrate';
@@ -324,4 +324,11 @@ export async function deleteInvestmentAction(form: FormData) {
   await ctx.supabase.from('investments').delete().eq('id', str(form, 'id'));
   revalidatePath('/', 'layout');
   redirect('/investimentos');
+}
+
+export async function unpayBillAction(form: FormData) {
+  const ctx = await getContext();
+  await unpayBill(ctx.supabase, str(form, 'id'));
+  revalidatePath('/', 'layout');
+  if (form.get('ficar')) redirect(`/contas/${str(form, 'id')}`);
 }

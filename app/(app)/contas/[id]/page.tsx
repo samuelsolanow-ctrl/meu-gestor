@@ -4,6 +4,7 @@ import { getContext } from '@/lib/context';
 import { ensureSchema } from '@/lib/migrate';
 import { brl, longDate } from '@/lib/format';
 import EditBillForm from '@/components/EditBillForm';
+import { unpayBillAction } from '../../actions';
 import { IconBack, IconCheck } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
@@ -25,8 +26,15 @@ export default async function EditBillPage({ params }: { params: Promise<{ id: s
       </header>
       {bill.status === 'paid' && (
         <div className="paid-banner" role="status">
-          <IconCheck /> Paga{bill.paid_at ? ` em ${longDate(String(bill.paid_at).slice(0, 10))}` : ''} · {brl(bill.amount)}
+          <IconCheck />
+          <span className="grow">Paga{bill.paid_at ? ` em ${longDate(String(bill.paid_at).slice(0, 10))}` : ''} · {brl(bill.amount)}</span>
+          <form action={unpayBillAction}>
+            <input type="hidden" name="id" value={bill.id} />
+            <input type="hidden" name="ficar" value="1" />
+            <button className="unpay-btn">Não paguei</button>
+          </form>
         </div>
+        <p className="tiny muted" style={{ margin: 0 }}>“Não paguei” volta a conta para em aberto e apaga o gasto lançado no pagamento.</p>
       )}
       <EditBillForm bill={bill} categories={categories ?? []} myName={ctx.name.split(' ')[0]} casalId={ctx.casal.id} />
     </main>

@@ -1,5 +1,5 @@
 import type { AppContext } from '@/lib/context';
-import { addBill, addTransaction, deleteTransaction, monthSummary, payBill, updateTransaction } from '@/lib/finance';
+import { addBill, addTransaction, deleteTransaction, monthSummary, payBill, unpayBill, updateTransaction } from '@/lib/finance';
 import { addDays, addMonths, brl, longDate, monthName, monthRange, todaySP } from '@/lib/format';
 import { fmtWhen, localIso, parseLocal } from '@/lib/agenda';
 import { ensureSchema } from '@/lib/migrate';
@@ -11,7 +11,7 @@ import { INV_KINDS, addInvestment, listInvestments, moveInvestment } from '@/lib
 export type ChatAction = { kind: 'transaction' | 'bill' | 'paid' | 'goal' | 'deleted' | 'event'; title: string; sub: string; amount?: number; income?: boolean };
 
 /** Ferramentas que só gravam algo: quando todas dão certo, a confirmação já escrita basta (resposta mais rápida). */
-export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer', 'editar_conta_a_pagar', 'apagar_conta_a_pagar', 'registrar_investimento', 'movimentar_investimento']);
+export const WRITE_TOOLS = new Set(['registrar_lancamento', 'criar_conta_a_pagar', 'marcar_conta_paga', 'apagar_lancamento', 'criar_meta', 'aportar_meta', 'agendar', 'cancelar_compromisso', 'parcelar_lancamento', 'pagar_fatura', 'definir_orcamento', 'editar_lancamento', 'lembrar', 'esquecer', 'editar_conta_a_pagar', 'apagar_conta_a_pagar', 'desmarcar_conta_paga', 'registrar_investimento', 'movimentar_investimento']);
 
 const WEEKDAYS = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
@@ -58,6 +58,7 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
+        pagas: { type: 'boolean', description: 'true para listar as já pagas (para desfazer)' },
         espaco: { type: 'string', enum: ['casal', 'pessoal', 'ambos'] },
         ate: { type: 'string', description: 'Só contas que vencem até esta data (AAAA-MM-DD)' },
       },
@@ -131,6 +132,11 @@ export const TOOLS = [
       },
       required: ['conta_id'],
     },
+  },
+  {
+    name: 'desmarcar_conta_paga',
+    description: 'Desfaz um pagamento marcado por engano: a conta volta para em aberto e o gasto do pagamento é apagado. Para achar o id de uma conta paga, use listar_contas_a_pagar com pagas=true.',
+    input_schema: { type: 'object', properties: { conta_id: { type: 'string' } }, required: ['conta_id'] },
   },
   {
     name: 'apagar_conta_a_pagar',
@@ -460,7 +466,7 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       return JSON.stringify({ ok: true, conta_id: bill.id });
     }
     case 'listar_contas_a_pagar': {
-      let q = db.from('bills').select('id, name, amount, due_date, recurrence, space_id').eq('status', 'open').order('due_date').limit(40);
+      let q = db.from('bills').select('id, name, amount, due_date, recurrence, space_id, status').eq('status', input.pagas ? 'paid' : 'open').order('due_date', { ascending: !input.pagas }).limit(40);
       if (input.espaco === 'casal' || input.espaco === 'pessoal') q = q.eq('space_id', spaceId(input.espaco));
       if (input.ate) q = q.lte('due_date', input.ate);
       const { data, error } = await q;
@@ -560,6 +566,12 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       if (error) throw new Error(error.message);
       if (!data) return JSON.stringify({ ok: false, erro: 'Conta não encontrada' });
       actions.push({ kind: 'bill', title: `${data.name} atualizada`, sub: `Vence ${longDate(data.due_date)}`, amount: Number(data.amount) });
+      return JSON.stringify({ ok: true });
+    }
+    case 'desmarcar_conta_paga': {
+      const r = await unpayBill(db, String(input.conta_id));
+      if (!r.wasPaid) return JSON.stringify({ ok: false, erro: 'Essa conta não estava paga' });
+      actions.push({ kind: 'bill', title: `${r.bill.name} em aberto de novo`, sub: 'Pagamento desfeito', amount: Number(r.bill.amount) });
       return JSON.stringify({ ok: true });
     }
     case 'apagar_conta_a_pagar': {

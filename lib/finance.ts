@@ -14,6 +14,7 @@ export type NewTransaction = {
   source?: 'chat' | 'form' | 'import' | 'photo';
   /** Número de parcelas (compra parcelada). O valor é o TOTAL da compra. */
   installments?: number;
+  billId?: string;
 };
 
 export async function addTransaction(db: DB, t: NewTransaction) {
@@ -31,6 +32,7 @@ export async function addTransaction(db: DB, t: NewTransaction) {
       account_id: t.accountId || null,
       occurred_on: t.occurredOn || todaySP(),
       source: t.source ?? 'form',
+      ...(t.billId ? { bill_id: t.billId } : {}),
     })
     .select('id, kind, amount, description, occurred_on, categories(name)')
     .single();
@@ -116,6 +118,7 @@ export async function payBill(db: DB, billId: string, source: 'chat' | 'form' = 
     .eq('id', billId);
   if (upErr) throw new Error(upErr.message);
 
+  await ensureSchema();
   await addTransaction(db, {
     spaceId: bill.space_id,
     kind: 'expense',
@@ -124,6 +127,7 @@ export async function payBill(db: DB, billId: string, source: 'chat' | 'form' = 
     categoryId: bill.category_id,
     accountId: bill.account_id,
     source,
+    billId: bill.id,
   });
 
   let next = null;
@@ -237,4 +241,54 @@ export async function deleteTransaction(db: DB, id: string) {
   const { data, error } = await (t.installment_group ? q.eq('installment_group', t.installment_group) : q.eq('id', id)).select('description, amount');
   if (error) throw new Error(error.message);
   return data ?? [];
+}
+
+/**
+ * Desfaz o "paga": a conta volta a ficar em aberto, o gasto lançado no pagamento
+ * é apagado e, se era recorrente, a conta do próximo período criada junto também.
+ */
+export async function unpayBill(db: DB, billId: string) {
+  await ensureSchema();
+  const { data: bill, error } = await db.from('bills').select('*').eq('id', billId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!bill) throw new Error('Conta não encontrada');
+  if (bill.status !== 'paid') return { bill, wasPaid: false };
+  const paidAt = bill.paid_at ? new Date(new Date(bill.paid_at).getTime() - 120_000).toISOString() : null;
+
+  // gasto do pagamento: pelo vínculo; nas contas antigas, pelo nome/valor/hora
+  const { data: linked } = await db.from('transactions').select('id').eq('bill_id', bill.id).limit(1);
+  let txId = linked?.[0]?.id;
+  if (!txId && paidAt) {
+    const { data: guess } = await db
+      .from('transactions')
+      .select('id')
+      .eq('space_id', bill.space_id)
+      .eq('kind', 'expense')
+      .eq('description', bill.name)
+      .eq('amount', bill.amount)
+      .gte('created_at', paidAt)
+      .order('created_at')
+      .limit(1);
+    txId = guess?.[0]?.id;
+  }
+  if (txId) await db.from('transactions').delete().eq('id', txId);
+
+  // próxima conta criada automaticamente (ainda em aberto)
+  if ((bill.recurrence === 'monthly' || bill.recurrence === 'yearly') && paidAt) {
+    const nextDue = addMonths(bill.due_date, bill.recurrence === 'monthly' ? 1 : 12);
+    const { data: next } = await db
+      .from('bills')
+      .select('id')
+      .eq('space_id', bill.space_id)
+      .eq('name', bill.name)
+      .eq('due_date', nextDue)
+      .eq('status', 'open')
+      .gte('created_at', paidAt)
+      .limit(1);
+    if (next?.[0]) await db.from('bills').delete().eq('id', next[0].id);
+  }
+
+  const { error: upErr } = await db.from('bills').update({ status: 'open', paid_at: null }).eq('id', bill.id);
+  if (upErr) throw new Error(upErr.message);
+  return { bill, wasPaid: true };
 }

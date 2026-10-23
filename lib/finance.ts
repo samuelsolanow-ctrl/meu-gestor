@@ -1,5 +1,6 @@
 import { addMonths, monthRange, todaySP } from '@/lib/format';
 import { ensureSchema } from '@/lib/migrate';
+import { ruleCategory } from '@/lib/rules';
 
 type DB = any; // cliente do Supabase já autenticado (as regras de privacidade valem aqui)
 
@@ -19,6 +20,9 @@ export type NewTransaction = {
 
 export async function addTransaction(db: DB, t: NewTransaction) {
   if (!(t.amount > 0)) throw new Error('Valor inválido');
+  // categoria aprendida ("sempre usar esta categoria para…") vale mais que o palpite
+  const learned = await ruleCategory(db, t.description).catch(() => null);
+  if (learned) t = { ...t, categoryId: learned };
   const n = Math.floor(Number(t.installments) || 1);
   if (n > 1) return addInstallments(db, t, Math.min(n, 48));
   const { data, error } = await db

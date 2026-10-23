@@ -23,7 +23,7 @@ const unlockForMic = () => unlockAudio(true);
 
 const SUGGESTIONS = ['Gastei 50 no mercado', 'Me lembra às 15h', 'Resumo do mês'];
 
-export default function JarbasBar({ tip }: { tip: string }) {
+export default function JarbasBar({ tip: _tip }: { tip?: string }) {
   const router = useRouter();
   const [text, setText] = useState('');
   const [listening, setListening] = useState(false);
@@ -141,10 +141,6 @@ export default function JarbasBar({ tip }: { tip: string }) {
         ))}
       </div>
 
-      <button type="button" className="jbar-tip" onClick={() => router.push('/jarbas')}>
-        <span className="jbar-dot" aria-hidden="true" />
-        <span><strong>Jarbas:</strong> {tip}</span>
-      </button>
     </section>
   );
 }

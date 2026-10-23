@@ -2,7 +2,7 @@ import { appOrigin, cronKey } from '@/lib/secrets';
 
 // O próprio app atualiza a estrutura do banco quando precisa.
 // Usa a conexão direta POSTGRES_URL que a integração Supabase + Vercel já criou.
-const VERSION = 7;
+const VERSION = 8;
 
 let running: Promise<void> | null = null;
 
@@ -142,6 +142,31 @@ async function migrate() {
     // v7 → lançamento sabe de qual conta paga veio (para poder desfazer)
     await sql.unsafe(`
       alter table public.transactions add column if not exists bill_id uuid references public.bills(id) on delete set null;
+    `);
+
+    // v8 → regras "sempre usar esta categoria" e investimentos de cada pessoa no próprio perfil
+    await sql.unsafe(`
+      create table if not exists public.category_rules (
+        id           uuid primary key default gen_random_uuid(),
+        family_id    uuid not null references public.families(id) on delete cascade default public.my_family_id(),
+        pattern      text not null,
+        category_id  uuid not null references public.categories(id) on delete cascade,
+        created_at   timestamptz not null default now(),
+        unique (family_id, pattern)
+      );
+      alter table public.category_rules enable row level security;
+      drop policy if exists category_rules_all on public.category_rules;
+      create policy category_rules_all on public.category_rules for all to authenticated
+        using (family_id = public.my_family_id()) with check (family_id = public.my_family_id());
+      grant select, insert, update, delete on public.category_rules to authenticated;
+
+      update public.investments i set space_id = s.id
+        from public.spaces sh, public.profiles p, public.spaces s
+       where i.space_id = sh.id and sh.kind = 'shared'
+         and p.family_id = sh.family_id
+         and s.family_id = sh.family_id and s.kind = 'personal' and s.owner_id = p.id
+         and i.owner_name is not null
+         and lower(split_part(p.display_name, ' ', 1)) = lower(i.owner_name);
     `);
 
     // v2 → agendador do banco chama os lembretes a cada minuto

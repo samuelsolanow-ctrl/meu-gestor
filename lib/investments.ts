@@ -36,9 +36,11 @@ export function kindFrom(text?: string | null) {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function listInvestments(db: DB) {
+export async function listInvestments(db: DB, spaceId?: string) {
   await ensureSchema();
-  const { data } = await db.from('investments').select('*').eq('archived', false).order('current_value', { ascending: false });
+  let q = db.from('investments').select('*').eq('archived', false).order('current_value', { ascending: false });
+  if (spaceId) q = q.eq('space_id', spaceId);
+  const { data } = await q;
   const items = (data ?? []).map((i: any) => ({ ...i, invested: Number(i.invested), current_value: Number(i.current_value) }));
   const invested = r2(items.reduce((s: number, i: any) => s + i.invested, 0));
   const current = r2(items.reduce((s: number, i: any) => s + i.current_value, 0));

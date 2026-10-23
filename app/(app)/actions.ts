@@ -8,6 +8,7 @@ import { addInvestment, kindFrom, moveInvestment } from '@/lib/investments';
 import { parseMoney, todaySP } from '@/lib/format';
 import { ensureSchema } from '@/lib/migrate';
 import { getBudgets, setBudget } from '@/lib/budget';
+import { saveRule } from '@/lib/rules';
 
 function spaceIdFrom(ctx: Awaited<ReturnType<typeof getContext>>, value: FormDataEntryValue | null) {
   return value === 'pessoal' ? ctx.pessoal.id : ctx.casal.id;
@@ -18,8 +19,9 @@ export async function createTransactionAction(_prev: any, form: FormData) {
   const amount = parseMoney(String(form.get('valor') ?? ''));
   if (!(amount > 0)) return { error: 'Digite um valor maior que zero.' };
   const kind = form.get('tipo') === 'receita' ? 'income' : 'expense';
+  let newId = '';
   try {
-    await addTransaction(ctx.supabase, {
+    const tx: any = await addTransaction(ctx.supabase, {
       spaceId: spaceIdFrom(ctx, form.get('espaco')),
       kind,
       amount,
@@ -30,12 +32,19 @@ export async function createTransactionAction(_prev: any, form: FormData) {
       source: 'form',
       installments: Number(form.get('parcelas')) || 1,
     });
+    newId = tx?.id ?? '';
   } catch (e: any) {
     return { error: e.message };
   }
   revalidatePath('/', 'layout');
   if (form.get('voltar') === 'cartoes') redirect(`/cartoes?c=${String(form.get('conta') ?? '')}`);
-  redirect(form.get('espaco') === 'pessoal' ? '/?e=pessoal' : '/');
+  // vai para o extrato mostrando o lançamento novo, com "Desfazer"
+  const p = new URLSearchParams();
+  if (form.get('espaco') === 'pessoal') p.set('e', 'pessoal');
+  const d = String(form.get('data') ?? '');
+  if (/^\d{4}-\d{2}/.test(d) && d.slice(0, 7) !== todaySP().slice(0, 7)) p.set('m', d.slice(0, 7));
+  if (newId) p.set('desfazer', newId);
+  redirect(`/extrato${p.toString() ? `?${p}` : ''}`);
 }
 
 export async function createBillAction(_prev: any, form: FormData) {
@@ -268,11 +277,11 @@ export async function createInvestmentAction(_prev: any, form: FormData) {
   const current = parseMoney(str(form, 'atual'));
   try {
     await addInvestment(ctx.supabase, {
-      spaceId: ctx.casal.id,
+      spaceId: spaceIdFrom(ctx, form.get('espaco')),
       name,
       kind: str(form, 'tipo'),
       institution: str(form, 'instituicao') || null,
-      owner: str(form, 'titular') || null,
+      owner: form.get('espaco') === 'pessoal' ? ctx.name.split(' ')[0] : 'Família',
       invested: invested > 0 ? invested : 0,
       current: current > 0 ? current : null,
     });
@@ -280,7 +289,7 @@ export async function createInvestmentAction(_prev: any, form: FormData) {
     return { error: e.message };
   }
   revalidatePath('/', 'layout');
-  redirect('/investimentos');
+  redirect(form.get('espaco') === 'pessoal' ? '/investimentos' : '/investimentos?e=casal');
 }
 
 export async function moveInvestmentAction(_prev: any, form: FormData) {
@@ -295,7 +304,7 @@ export async function moveInvestmentAction(_prev: any, form: FormData) {
     return { error: e.message };
   }
   revalidatePath('/', 'layout');
-  redirect(`/investimentos?i=${id}`);
+  redirect(`/investimentos?i=${id}${form.get('espaco') === 'casal' ? '&e=casal' : ''}`);
 }
 
 export async function updateInvestmentAction(form: FormData) {
@@ -309,21 +318,20 @@ export async function updateInvestmentAction(form: FormData) {
       name: str(form, 'nome') || undefined,
       kind: kindFrom(str(form, 'tipo')),
       institution: str(form, 'instituicao') || null,
-      owner_name: str(form, 'titular') || null,
       ...(invested >= 0 ? { invested } : {}),
       ...(current >= 0 ? { current_value: current } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);
   revalidatePath('/', 'layout');
-  redirect(`/investimentos?i=${id}`);
+  redirect(`/investimentos?i=${id}${form.get('espaco') === 'casal' ? '&e=casal' : ''}`);
 }
 
 export async function deleteInvestmentAction(form: FormData) {
   const ctx = await getContext();
   await ctx.supabase.from('investments').delete().eq('id', str(form, 'id'));
   revalidatePath('/', 'layout');
-  redirect('/investimentos');
+  redirect(form.get('espaco') === 'casal' ? '/investimentos?e=casal' : '/investimentos');
 }
 
 export async function unpayBillAction(form: FormData) {
@@ -331,4 +339,50 @@ export async function unpayBillAction(form: FormData) {
   await unpayBill(ctx.supabase, str(form, 'id'));
   revalidatePath('/', 'layout');
   if (form.get('ficar')) redirect(`/contas/${str(form, 'id')}`);
+}
+
+// ---------- Extrato: trocar categoria com um toque
+export async function setCategoryAction(id: string, categoryId: string | null, always: boolean) {
+  const ctx = await getContext();
+  const t = await updateTransaction(ctx.supabase, id, { categoryId });
+  if (always && categoryId) await saveRule(ctx.supabase, t.description, categoryId);
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+export async function quickDeleteAction(id: string) {
+  const ctx = await getContext();
+  await deleteTransaction(ctx.supabase, id);
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}
+
+// ---------- Categorias
+export async function createCategoryAction(form: FormData) {
+  const ctx = await getContext();
+  const name = str(form, 'nome').slice(0, 40);
+  if (!name) return;
+  await ctx.supabase.from('categories').insert({ family_id: ctx.familyId, name, kind: form.get('tipo') === 'income' ? 'income' : 'expense' });
+  revalidatePath('/', 'layout');
+}
+
+export async function renameCategoryAction(form: FormData) {
+  const ctx = await getContext();
+  const name = str(form, 'nome').slice(0, 40);
+  if (!name) return;
+  await ctx.supabase.from('categories').update({ name }).eq('id', str(form, 'id'));
+  revalidatePath('/', 'layout');
+}
+
+export async function deleteCategoryAction(form: FormData) {
+  const ctx = await getContext();
+  // os lançamentos dessa categoria ficam "sem categoria"
+  await ctx.supabase.from('categories').delete().eq('id', str(form, 'id'));
+  revalidatePath('/', 'layout');
+}
+
+export async function deleteRuleAction(form: FormData) {
+  const ctx = await getContext();
+  await ctx.supabase.from('category_rules').delete().eq('id', str(form, 'id'));
+  revalidatePath('/categorias');
 }

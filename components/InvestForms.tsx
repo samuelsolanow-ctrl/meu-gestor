@@ -26,7 +26,7 @@ export function PlaceInput({ value }: { value?: string | null }) {
   );
 }
 
-export function NewInvestmentForm({ owners }: { owners: string[] }) {
+export function NewInvestmentForm({ espaco }: { espaco: 'pessoal' | 'casal' }) {
   const [state, action, pending] = useActionState(createInvestmentAction, { error: '' } as any);
   return (
     <form action={action} className="stack" style={{ marginTop: 14 }}>
@@ -39,26 +39,21 @@ export function NewInvestmentForm({ owners }: { owners: string[] }) {
         <label className="field"><span>Quanto aplicou (R$)</span><input className="input" name="aplicado" inputMode="decimal" placeholder="0,00" required /></label>
         <label className="field"><span>Vale hoje (R$)</span><input className="input" name="atual" inputMode="decimal" placeholder="igual ao aplicado" /></label>
       </div>
-      <label className="field">
-        <span>Titular</span>
-        <select className="input" name="titular" defaultValue={owners[0] ?? ''}>
-          {owners.map((o) => <option key={o} value={o}>{o}</option>)}
-          <option value="Família">Família</option>
-        </select>
-      </label>
+      <input type="hidden" name="espaco" value={espaco} />
       {state?.error && <p className="error" role="alert">{state.error}</p>}
       <button className="btn btn-primary btn-block" disabled={pending}>{pending ? 'Salvando…' : 'Adicionar investimento'}</button>
     </form>
   );
 }
 
-export function MoveForm({ id, today }: { id: string; today: string }) {
+export function MoveForm({ id, today, espaco }: { id: string; today: string; espaco: 'pessoal' | 'casal' }) {
   const [state, action, pending] = useActionState(moveInvestmentAction, { error: '' } as any);
   const [kind, setKind] = useState<'aporte' | 'resgate' | 'atualizacao'>('atualizacao');
   const label = kind === 'aporte' ? 'Quanto aplicou' : kind === 'resgate' ? 'Quanto resgatou' : 'Quanto vale hoje';
   return (
     <form action={action} className="stack">
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="espaco" value={espaco} />
       <div className="seg" role="radiogroup" aria-label="O que aconteceu">
         <input type="radio" id={`k-at-${id}`} name="tipo" value="atualizacao" checked={kind === 'atualizacao'} onChange={() => setKind('atualizacao')} />
         <label htmlFor={`k-at-${id}`}>Atualizar</label>

@@ -1,7 +1,6 @@
 import { getContext } from '@/lib/context';
-import { brl } from '@/lib/format';
 import Link from 'next/link';
-import { createAccountAction, createGoalAction, deleteGoalAction, signOutAction, updateGoalAction } from '../actions';
+import { createAccountAction, signOutAction } from '../actions';
 import FaceIdToggle from '@/components/FaceIdToggle';
 import NotificationsToggle from '@/components/NotificationsToggle';
 import CalendarConnect from '@/components/CalendarConnect';
@@ -9,6 +8,7 @@ import VoicePicker from '@/components/VoicePicker';
 import { headers } from 'next/headers';
 import { agendaSig, appOrigin, atalhoToken } from '@/lib/secrets';
 import AtalhoSetup from '@/components/AtalhoSetup';
+import { IconBills, IconCalendar, IconList, IconPie, IconTrend } from '@/components/icons';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,11 +22,10 @@ const TYPES: Record<string, string> = {
 export default async function MaisPage() {
   const ctx = await getContext();
   const firstName = ctx.name.split(' ')[0];
-  const [{ data: family }, { data: members }, { data: accounts }, { data: goals }] = await Promise.all([
+  const [{ data: family }, { data: members }, { data: accounts }] = await Promise.all([
     ctx.supabase.from('families').select('name, invite_code').maybeSingle(),
     ctx.supabase.from('profiles').select('id, display_name'),
-    ctx.supabase.from('accounts').select('id, name, institution, type, space_id, closing_day, due_day').eq('archived', false).order('name'),
-    ctx.supabase.from('goals').select('id, name, target_amount, current_amount, deadline, space_id').order('created_at'),
+    ctx.supabase.from('accounts').select('id, name, institution, type, space_id, closing_day, due_day').eq('archived', false).neq('type', 'credit_card').order('name'),
   ]);
   let calendar: { webcal: string; https: string } | null = null;
   let atalho: { siri: string; sms: string } | null = null;
@@ -43,6 +42,14 @@ export default async function MaisPage() {
     <main className="page">
       <h1 className="page-title">Mais</h1>
 
+      <nav className="card menu-list" aria-label="Atalhos do app">
+        <Link href="/contas"><span className="menu-ic"><IconBills /></span><span className="grow">Contas a pagar</span>›</Link>
+        <Link href="/investimentos"><span className="menu-ic"><IconTrend /></span><span className="grow">Patrimônio · investimentos e metas</span>›</Link>
+        <Link href="/orcamento"><span className="menu-ic"><IconPie /></span><span className="grow">Orçamento por categoria</span>›</Link>
+        <Link href="/previsao"><span className="menu-ic"><IconCalendar /></span><span className="grow">Previsão dos próximos meses</span>›</Link>
+        <Link href="/categorias"><span className="menu-ic"><IconList /></span><span className="grow">Categorias e regras</span>›</Link>
+      </nav>
+
       <section className="card stack" aria-label="Família">
         <div className="card-head"><h2>{family?.name ?? 'Família'}</h2></div>
         <div className="small muted">
@@ -55,10 +62,10 @@ export default async function MaisPage() {
         </div>
       </section>
 
-      <section className="card stack" aria-label="Contas e cartões">
-        <div className="card-head"><h2>Contas e cartões</h2></div>
+      <section className="card stack" aria-label="Contas bancárias">
+        <div className="card-head"><h2>Contas bancárias</h2><Link href="/cartoes" className="small">Cartões ›</Link></div>
         {(accounts ?? []).length === 0 ? (
-          <p className="empty">Cadastre seus bancos e cartões para o Jarbas saber onde lançar.</p>
+          <p className="empty">Cadastre conta corrente, Pix e dinheiro. Os cartões de crédito ficam na aba Cartões.</p>
         ) : (
           <div className="list">
             {(accounts ?? []).map((a: any) => (
@@ -76,14 +83,14 @@ export default async function MaisPage() {
           </div>
         )}
         <details>
-          <summary className="btn" style={{ listStyle: 'none' }}>Adicionar conta ou cartão</summary>
+          <summary className="btn" style={{ listStyle: 'none' }}>Adicionar conta</summary>
           <form action={createAccountAction} className="stack" style={{ marginTop: 14 }}>
             <label className="field"><span>Nome</span><input className="input" name="nome" placeholder="Cartão Santander" required /></label>
             <div className="grid2">
               <label className="field">
                 <span>Tipo</span>
-                <select className="input" name="tipo" defaultValue="credit_card">
-                  {Object.entries(TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                <select className="input" name="tipo" defaultValue="checking">
+                  {Object.entries(TYPES).filter(([v]) => v !== 'credit_card' && v !== 'investment').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </label>
               <label className="field">
@@ -93,10 +100,6 @@ export default async function MaisPage() {
                   {['Santander', 'Bradesco', 'Neon', 'Caixa', 'Banco do Brasil', 'Ágora'].map((b) => <option key={b} value={b}>{b}</option>)}
                 </select>
               </label>
-            </div>
-            <div className="grid2">
-              <label className="field"><span>Fecha dia (cartão)</span><input className="input" name="fechamento" inputMode="numeric" placeholder="ex.: 10" /></label>
-              <label className="field"><span>Vence dia (cartão)</span><input className="input" name="vencimento" inputMode="numeric" placeholder="ex.: 20" /></label>
             </div>
             <label className="field">
               <span>De quem é</span>
@@ -110,60 +113,7 @@ export default async function MaisPage() {
         </details>
       </section>
 
-      <section className="card stack" id="metas" aria-label="Metas">
-        <div className="card-head"><h2>Metas</h2></div>
-        {(goals ?? []).map((g: any) => (
-          <details key={g.id} className="goal-edit">
-            <summary className="row small" style={{ justifyContent: 'space-between', listStyle: 'none', cursor: 'pointer', minHeight: 44 }}>
-              <span style={{ fontWeight: 600 }}>{g.name} <span className="muted">· {whose(g.space_id)}</span></span>
-              <span className="muted">{brl(g.current_amount)} de {brl(g.target_amount)} ›</span>
-            </summary>
-            <form action={updateGoalAction} className="stack" style={{ marginTop: 8 }}>
-              <input type="hidden" name="id" value={g.id} />
-              <label className="field"><span>Nome</span><input className="input" name="nome" defaultValue={g.name} /></label>
-              <div className="grid2">
-                <label className="field"><span>Quanto precisa (R$)</span><input className="input" name="alvo" inputMode="decimal" defaultValue={String(g.target_amount).replace('.', ',')} /></label>
-                <label className="field"><span>Já tem (R$)</span><input className="input" name="atual" inputMode="decimal" defaultValue={String(g.current_amount).replace('.', ',')} /></label>
-              </div>
-              <label className="field"><span>Prazo</span><input className="input" type="date" name="prazo" defaultValue={g.deadline ?? ''} /></label>
-              <button className="btn btn-primary btn-block">Salvar meta</button>
-            </form>
-            <form action={deleteGoalAction} style={{ marginTop: 8 }}>
-              <input type="hidden" name="id" value={g.id} />
-              <button className="btn btn-block" style={{ border: 'none', color: 'var(--late)' }}>Excluir meta</button>
-            </form>
-          </details>
-        ))}
-        <details>
-          <summary className="btn" style={{ listStyle: 'none' }}>Criar meta</summary>
-          <form action={createGoalAction} className="stack" style={{ marginTop: 14 }}>
-            <label className="field"><span>Nome da meta</span><input className="input" name="nome" placeholder="Viagem de férias" required /></label>
-            <div className="grid2">
-              <label className="field"><span>Quanto precisa (R$)</span><input className="input" name="alvo" inputMode="decimal" required /></label>
-              <label className="field"><span>Já tem (R$)</span><input className="input" name="atual" inputMode="decimal" placeholder="0" /></label>
-            </div>
-            <div className="grid2">
-              <label className="field"><span>Prazo</span><input className="input" type="date" name="prazo" /></label>
-              <label className="field">
-                <span>De quem é</span>
-                <select className="input" name="espaco" defaultValue="casal">
-                  <option value="pessoal">{firstName}</option>
-                  <option value="casal">Família</option>
-                </select>
-              </label>
-            </div>
-            <button className="btn btn-primary btn-block">Salvar meta</button>
-          </form>
-        </details>
-      </section>
 
-      <Link href="/investimentos" className="card row tx-link" aria-label="Abrir investimentos">
-        <div className="grow">
-          <div style={{ fontWeight: 700 }}>Investimentos</div>
-          <div className="small muted">Patrimônio, rendimento, aportes e resgates</div>
-        </div>
-        <span className="muted" aria-hidden="true">›</span>
-      </Link>
 
       {atalho && <AtalhoSetup siriUrl={atalho.siri} smsUrl={atalho.sms} />}
 

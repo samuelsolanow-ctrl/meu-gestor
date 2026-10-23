@@ -6,6 +6,7 @@ import { ensureSchema } from '@/lib/migrate';
 import { invoiceDates, invoiceToPay, loadCardData, shiftKey, type Card } from '@/lib/cards';
 import { getBudgets, setBudget } from '@/lib/budget';
 import { forecast } from '@/lib/forecast';
+import { rulePattern, saveRule } from '@/lib/rules';
 import { INV_KINDS, addInvestment, listInvestments, moveInvestment } from '@/lib/investments';
 
 /** Ação mostrada como cartão no chat */
@@ -114,6 +115,7 @@ export const TOOLS = [
         data: { type: 'string', description: 'AAAA-MM-DD' },
         conta: { type: 'string' },
         espaco: { type: 'string', enum: ['casal', 'pessoal'] },
+        sempre_usar: { type: 'boolean', description: 'true se a pessoa quer que essa descrição use sempre essa categoria daqui pra frente' },
       },
       required: ['lancamento_id'],
     },
@@ -186,7 +188,7 @@ export const TOOLS = [
         nome: { type: 'string', description: 'Ex.: CDB 110% CDI, Tesouro Selic 2029, PETR4' },
         tipo: { type: 'string', enum: Object.keys(INV_KINDS) },
         instituicao: { type: 'string', description: 'Ágora, Santander…' },
-        titular: { type: 'string', description: 'Nome da pessoa ou Família' },
+        espaco: { type: 'string', enum: ['pessoal', 'casal'], description: 'pessoal (padrão: só de quem fala) ou casal (da Família)' },
         valor_aplicado: { type: 'number' },
         valor_atual: { type: 'number', description: 'Se diferente do aplicado' },
       },
@@ -317,6 +319,7 @@ Como agir:
 - Gasto ou receita contado → registrar_lancamento com a categoria mais adequada da lista.
 - Tudo do bebê vai na categoria Bebê: fralda, lenço, fórmula/leite, papinha, roupinha, enxoval, brinquedo, carrinho, pomada, remédio e consulta do pediatra, vacina, babá, berçário/creche.
 - Cartão de crédito: compra parcelada ("10x", "em 10 vezes", "parcelei") → registrar_lancamento com valor TOTAL e parcelas; o app cria uma parcela por fatura. Se a pessoa disser só o valor da parcela ("10 de 410"), multiplique. Se disser que um lançamento já feito foi parcelado, use parcelar_lancamento. Pagar a fatura do cartão → pagar_fatura (nunca registre a fatura como despesa, senão conta em dobro). Perguntas sobre fatura, limite ou cartão → ver_cartoes.
+- Investimentos: cada pessoa vê só os próprios (pessoal) e os da Família (casal). Não existe acesso aos investimentos pessoais do outro. Novo investimento é pessoal, a menos que digam que é da família/do casal.
 - Investimentos ficam SEPARADOS: aplicar, aportar, resgatar ou atualizar o valor de um investimento nunca é registrar_lancamento (não é gasto nem receita). Use registrar_investimento (novo) ou movimentar_investimento (existente). Rendimento = valor atual − aplicado.
 - Contas a pagar: dá para corrigir (editar_conta_a_pagar) e mudar o aviso ("me avisa 5 dias antes da escola" → avisar_dias_antes = 5).
 - Orçamento: "quero gastar no máximo 800 com mercado" → definir_orcamento. "Como está o orçamento?", "ainda posso gastar com lazer?" → ver_orcamento. Ao lançar um gasto numa categoria que passou de 80% do limite, avise em poucas palavras.
@@ -335,6 +338,7 @@ Como agir:
 INTELIGÊNCIA (é o que faz você valer a pena):
 - Você já recebe abaixo um RETRATO atualizado das finanças, agenda e memória. Use-o para responder na hora, sem chamar ferramenta, sempre que ele bastar. Use ferramentas para gravar, corrigir ou quando precisar de detalhe que não está no retrato.
 - Entenda a intenção, não só as palavras. "Dá pra eu comprar um tênis de 600?" → olhe saldo previsto do fim do mês, orçamento da categoria e faturas que vêm por aí, e responda sim/não com o motivo em uma frase. "Tô gastando muito?" → compare com orçamento e com o que entrou.
+- "Sempre que for Uber é transporte" → editar_lancamento com categoria e sempre_usar=true (o app aprende e usa nos próximos).
 - Correções ("não, foi 95", "era no cartão", "muda pra lazer", "esse foi pessoal") → editar_lancamento no lançamento que acabou de ser feito (o id está nos últimos lançamentos do retrato). Nunca crie um novo por cima.
 - Quando a pessoa contar algo duradouro sobre a vida financeira ou a rotina (salário, dia de pagamento, planos, preferências), guarde com lembrar, sem anunciar. Use a memória para personalizar e não pergunte o que já sabe.
 - Faça contas com cuidado (parcelas, sobra, quanto falta para a meta, quanto por mês para chegar lá).
@@ -398,7 +402,7 @@ export async function buildSystem(ctx: AppContext) {
     }.`,
     `Contas a pagar (próx. 20 dias): ${billsOpen.length ? billsOpen.map((b) => `[id ${b.id}] ${b.name} ${money(Number(b.amount))} vence ${b.due_date}${b.recurrence === 'monthly' ? ' mensal' : ''} (${sp(b.space_id)})`).join('; ') : 'nenhuma'}.`,
     `Previsão da Família (sobra por mês, já com contas fixas, parcelas e média do dia a dia; entrada média ${fc ? money(fc.incomeAvg) : '?'}): ${fc ? fc.months.map((m: any) => `${m.key} ${money(m.balance)} (fixas ${money(m.bills)}, parcelas ${money(m.installments)})`).join('; ') : 'sem dados'}. Para "posso comprar X em N vezes?", subtraia X/N dos meses afetados e diga se algum fica negativo.`,
-    `Investimentos (separados do saldo): ${invest && invest.items.length ? `total ${money(invest.current)} (aplicado ${money(invest.invested)}, rendimento ${money(invest.gain)}); ` + invest.items.map((i: any) => `${i.name}${i.institution ? ` na ${i.institution}` : ''}${i.owner_name ? ` (${i.owner_name})` : ''} ${money(i.current_value)}`).join('; ') : 'nenhum cadastrado'}.`,
+    `Investimentos (separados do saldo): ${invest && invest.items.length ? `total ${money(invest.current)} (aplicado ${money(invest.invested)}, rendimento ${money(invest.gain)}); ` + invest.items.map((i: any) => `${i.name}${i.institution ? ` na ${i.institution}` : ''} (${i.space_id === ctx.casal.id ? 'Família' : 'seu, pessoal'}) ${money(i.current_value)}`).join('; ') : 'nenhum cadastrado'}.`,
     `Metas: ${(goals.data ?? []).length ? (goals.data as any[]).map((g) => `${g.name} ${money(Number(g.current_amount))} de ${money(Number(g.target_amount))}${g.deadline ? ` até ${g.deadline}` : ''} (${sp(g.space_id)})`).join('; ') : 'nenhuma'}.`,
     `Últimos lançamentos (mais novo primeiro): ${((recent.data ?? []) as any[]).map((t) => `[id ${t.id}] ${t.occurred_on} ${t.kind === 'income' ? '+' : '-'}${money(Number(t.amount))} ${t.description}${t.installment_total ? ` ${t.installment_no}/${t.installment_total}` : ''} · ${t.categories?.name ?? 'sem categoria'}${t.accounts?.name ? ` · ${t.accounts.name}` : ''} · ${sp(t.space_id)}`).join(' | ') || 'nenhum'}.`,
     `Memória (o que você já sabe sobre eles): ${((memory.data ?? []) as any[]).map((m) => `[${m.id}] ${m.fact}${m.space_id === ctx.casal.id ? '' : ' (pessoal)'}`).join(' | ') || 'nada ainda'}.`,
@@ -570,6 +574,10 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
         occurredOn: input.data ? String(input.data) : undefined,
         spaceId: input.espaco ? spaceId(input.espaco) : undefined,
       });
+      if (input.sempre_usar && input.categoria) {
+        const cid = await categoryId(input.categoria, t.kind === 'income' ? 'income' : 'expense');
+        if (cid) await saveRule(db, String(input.descricao ?? t.description), cid);
+      }
       actions.push({ kind: 'transaction', title: `${input.descricao ?? t.description} corrigido`, sub: 'Lançamento atualizado', amount: input.valor ? Number(input.valor) : Number(t.amount), income: t.kind === 'income' });
       return JSON.stringify({ ok: true });
     }
@@ -594,7 +602,13 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       const accId = await accountId(input.cartao_ou_conta);
       const { data: acc } = accId ? await db.from('accounts').select('id, name, type, closing_day, due_day').eq('id', accId).maybeSingle() : { data: null };
       const { data: cats } = await db.from('categories').select('id, name, kind');
-      const catOf = (n: string | undefined, kind: string) => {
+      const { data: rules } = await db.from('category_rules').select('pattern, category_id');
+      const catOf = (n: string | undefined, kind: string, desc?: string) => {
+        if (desc && rules?.length) {
+          const pd = rulePattern(desc);
+          const hit = rules.find((r: any) => r.pattern === pd) ?? rules.find((r: any) => r.pattern.length >= 3 && pd.includes(r.pattern));
+          if (hit) return hit.category_id;
+        }
         if (!n) return null;
         const list = (cats ?? []).filter((c: any) => c.kind === kind);
         return (list.find((c: any) => norm(c.name) === norm(n)) ?? list.find((c: any) => norm(c.name).includes(norm(n))))?.id ?? null;
@@ -623,7 +637,7 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
         if (!(valor > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(String(it.data))) continue;
         const kind = it.tipo === 'receita' || it.tipo === 'estorno' ? 'income' : 'expense';
         const desc = String(it.descricao ?? '').trim().slice(0, 120) || 'Lançamento';
-        const category_id = catOf(it.categoria, kind);
+        const category_id = catOf(it.categoria, kind, desc);
         const m = /^(\d{1,2})\s*\/\s*(\d{1,2})$/.exec(String(it.parcela ?? '').trim());
         const p = m ? Number(m[1]) : 0;
         const n = m ? Number(m[2]) : 0;
@@ -680,15 +694,15 @@ export async function runTool(ctx: AppContext, name: string, input: any, actions
       const inv = await listInvestments(db);
       return JSON.stringify({
         total_atual: inv.current, total_aplicado: inv.invested, rendimento: inv.gain, rendimento_pct: inv.gainPct,
-        itens: inv.items.map((i: any) => ({ id: i.id, nome: i.name, tipo: INV_KINDS[i.kind] ?? i.kind, onde: i.institution, titular: i.owner_name, aplicado: i.invested, atual: i.current_value, atualizado_em: String(i.updated_at).slice(0, 10) })),
+        itens: inv.items.map((i: any) => ({ id: i.id, nome: i.name, tipo: INV_KINDS[i.kind] ?? i.kind, onde: i.institution, de_quem: i.space_id === ctx.casal.id ? 'Família' : 'pessoal', aplicado: i.invested, atual: i.current_value, atualizado_em: String(i.updated_at).slice(0, 10) })),
       });
     }
     case 'registrar_investimento': {
       const it = await addInvestment(db, {
-        spaceId: ctx.casal.id, name: String(input.nome), kind: input.tipo, institution: input.instituicao ?? null,
-        owner: input.titular ?? ctx.name.split(' ')[0], invested: Number(input.valor_aplicado), current: input.valor_atual ? Number(input.valor_atual) : null,
+        spaceId: input.espaco === 'casal' ? ctx.casal.id : ctx.pessoal.id, name: String(input.nome), kind: input.tipo, institution: input.instituicao ?? null,
+        owner: input.espaco === 'casal' ? 'Família' : ctx.name.split(' ')[0], invested: Number(input.valor_aplicado), current: input.valor_atual ? Number(input.valor_atual) : null,
       });
-      actions.push({ kind: 'goal', title: it.name, sub: `Investimento · ${[it.institution, it.owner_name].filter(Boolean).join(' · ')}`, amount: Number(it.current_value) });
+      actions.push({ kind: 'goal', title: it.name, sub: `Investimento · ${[it.institution, input.espaco === 'casal' ? 'Família' : 'seu'].filter(Boolean).join(' · ')}`, amount: Number(it.current_value) });
       return JSON.stringify({ ok: true, id: it.id });
     }
     case 'movimentar_investimento': {

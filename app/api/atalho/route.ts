@@ -25,8 +25,11 @@ export async function POST(req: Request) {
   if (ctype.includes('application/json')) body = await req.json().catch(() => ({}));
   else if (ctype.includes('form')) body = Object.fromEntries((await req.formData()).entries());
   else body = { texto: await req.text() };
-  const texto = String(body.texto ?? body.text ?? body.mensagem ?? '').trim().slice(0, 1500);
-  const origem = String(body.origem ?? url.searchParams.get('origem') ?? 'siri').toLowerCase() === 'sms' ? 'sms' : 'siri';
+  // aceita "texto", "Texto", "text"… ou o primeiro campo com texto que vier
+  const lower: Record<string, any> = Object.fromEntries(Object.entries(body ?? {}).map(([k, v]) => [k.toLowerCase().trim(), v]));
+  const firstText = Object.entries(lower).find(([k, v]) => k !== 'origem' && typeof v === 'string' && v.trim())?.[1];
+  const texto = String(lower.texto ?? lower.text ?? lower.mensagem ?? firstText ?? '').trim().slice(0, 1500);
+  const origem = String(lower.origem ?? url.searchParams.get('origem') ?? 'siri').toLowerCase() === 'sms' ? 'sms' : 'siri';
   if (!texto) return plain('Não ouvi nada. Tente de novo.', 400);
 
   try {
